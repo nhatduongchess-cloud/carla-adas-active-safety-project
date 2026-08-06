@@ -121,7 +121,7 @@ stateDiagram-v2
 ## Repository structure
 
 ```
-Self-Driving-Perception/
+carla-adas-active-safety-project/
 ├── chinh.py                 # Main orchestrator (entry point) — per-frame pipeline
 ├── config.py                # Single source of truth: sensor geometry + safety thresholds
 ├── selftest.py              # CARLA-free self-test of the geometry + safety math (63 checks)
