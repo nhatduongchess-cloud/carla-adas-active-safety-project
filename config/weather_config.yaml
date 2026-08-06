@@ -1,0 +1,57 @@
+# Hồ sơ thời tiết CARLA cho bộ kiểm thử ODD / L3.
+# Mỗi hồ sơ là tham số carla.WeatherParameters. weather_model.estimate_conditions()
+# dùng precipitation / fog_density / wetness / precipitation_deposits để ước lượng
+# tầm nhìn, hệ số ma sát μ và SNR -> ODD monitor phân loại NORMAL/DEGRADED/VIOLATION.
+#
+# expect_odd: mức ODD kỳ vọng, dùng để chấm "false_disengagement" trong báo cáo.
+
+profiles:
+  clear:
+    expect_odd: NORMAL
+    cloudiness: 10.0
+    precipitation: 0.0
+    precipitation_deposits: 0.0
+    wetness: 0.0
+    fog_density: 0.0
+    sun_altitude_angle: 70.0
+    wind_intensity: 10.0
+
+  light_rain:
+    expect_odd: DEGRADED
+    cloudiness: 60.0
+    precipitation: 30.0
+    precipitation_deposits: 30.0
+    wetness: 40.0
+    fog_density: 5.0
+    sun_altitude_angle: 45.0
+    wind_intensity: 30.0
+
+  heavy_rain:
+    expect_odd: DEGRADED
+    cloudiness: 90.0
+    precipitation: 80.0
+    precipitation_deposits: 70.0
+    wetness: 80.0
+    fog_density: 20.0
+    sun_altitude_angle: 20.0
+    wind_intensity: 60.0
+
+  fog:
+    expect_odd: VIOLATION
+    cloudiness: 50.0
+    precipitation: 0.0
+    precipitation_deposits: 0.0
+    wetness: 10.0
+    fog_density: 70.0
+    sun_altitude_angle: 30.0
+    wind_intensity: 10.0
+
+  storm:
+    expect_odd: VIOLATION
+    cloudiness: 100.0
+    precipitation: 100.0
+    precipitation_deposits: 90.0
+    wetness: 100.0
+    fog_density: 60.0
+    sun_altitude_angle: 10.0
+    wind_intensity: 80.0

@@ -1,0 +1,61 @@
+# ==============================================================================
+# CARLA ADAS — .gitignore
+# ==============================================================================
+
+# --- Virtual environments -----------------------------------------------------
+.venv/
+.venv-1/
+.venvCarLa/
+myenv/
+env/
+venv/
+ENV/
+*.egg-info/
+
+# --- Python bytecode / caches -------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- Editor / IDE / agent config ----------------------------------------------
+.vscode/
+.idea/
+.claude/
+*.code-workspace
+
+# --- Third-party CARLA repositories (cloned separately — see README) ----------
+# These are large upstream projects with their own git history & licenses.
+rllib-integration/
+ros-bridge/
+scenario_runner/
+transfuser/
+
+# --- Datasets & training output (regenerable — see README) --------------------
+dataset/
+# Ultralytics detector training / validation runs (curves, batch previews)
+runs/
+
+# --- Model weights ------------------------------------------------------------
+# Standard detector weights are downloadable; do not bloat the repo with them.
+*.pt
+*.onnx
+*.engine
+*.trt
+# CLIP ViT-B-32.pt (~354 MB) used by YOLO-World open-vocabulary detection
+weights/clip/
+# ...but DO keep our own tiny trained RL policy so demos run out of the box.
+!weights/rl_speed_policy.pt
+
+# --- Runtime output / logs / telemetry ----------------------------------------
+logs/
+telemetry_log_*.csv
+*.log
+
+# --- OS / cloud-sync junk -----------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db

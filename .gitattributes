@@ -1,0 +1,12 @@
+# Normalize line endings across OSes (repo authored on Windows).
+* text=auto eol=lf
+
+# Windows batch scripts must keep CRLF.
+*.bat text eol=crlf
+
+# Treat these as binary (no diff / no EOL normalization).
+*.pt   binary
+*.onnx binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary

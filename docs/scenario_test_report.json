@@ -1,0 +1,111 @@
+{
+  "title": "CARLA ScenarioRunner Port — AEB/Avoidance Test Report",
+  "generated_at": "2026-08-04T20:27:09",
+  "summary": {
+    "scenarios": 3,
+    "passed": 2,
+    "failed": 1,
+    "pass_rate_pct": 66.7
+  },
+  "scenarios": [
+    {
+      "profile": "StationaryObjectCrossing",
+      "name": "StationaryObjectCrossing",
+      "category": "crossing",
+      "tests": "AEB (vật tĩnh)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "evaded": false,
+      "min_distance_m": 1.1,
+      "min_ttc_s": 0.24,
+      "max_decel_ms2": 26.98,
+      "kpi": {
+        "scenario": "StationaryObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 1.1,
+        "min_ttc_s": 0.24,
+        "max_decel_ms2": 26.98,
+        "max_jerk_ms3": 859.35,
+        "mean_speed_kmh": 3.9,
+        "max_speed_kmh": 30.0,
+        "pct_time_state": {
+          "NORMAL": 81.8,
+          "EMERGENCY_BRAKE": 18.2
+        },
+        "success": true
+      },
+      "pass": true,
+      "reasons": []
+    },
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "evaded": false,
+      "min_distance_m": 3.27,
+      "min_ttc_s": 0.7,
+      "max_decel_ms2": 26.64,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 3.27,
+        "min_ttc_s": 0.7,
+        "max_decel_ms2": 26.64,
+        "max_jerk_ms3": 663.76,
+        "mean_speed_kmh": 13.0,
+        "max_speed_kmh": 30.1,
+        "pct_time_state": {
+          "NORMAL": 89.8,
+          "FOLLOW": 0.1,
+          "EMERGENCY_BRAKE": 10.1
+        },
+        "success": true
+      },
+      "pass": true,
+      "reasons": []
+    },
+    {
+      "profile": "ConstructionObstacle",
+      "name": "ConstructionObstacle",
+      "category": "crossing",
+      "tests": "AEB (công trường)",
+      "collisions": 18,
+      "reacted": true,
+      "braked": false,
+      "evaded": false,
+      "min_distance_m": 6.68,
+      "min_ttc_s": 1.7,
+      "max_decel_ms2": 145.07,
+      "kpi": {
+        "scenario": "ConstructionObstacle",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 18,
+        "min_distance_m": 6.68,
+        "min_ttc_s": 1.7,
+        "max_decel_ms2": 145.07,
+        "max_jerk_ms3": 5586.78,
+        "mean_speed_kmh": 2.7,
+        "max_speed_kmh": 30.0,
+        "pct_time_state": {
+          "NORMAL": 97.8,
+          "FOLLOW": 2.2
+        },
+        "success": false
+      },
+      "pass": false,
+      "reasons": [
+        "18 va chạm"
+      ]
+    }
+  ]
+}
