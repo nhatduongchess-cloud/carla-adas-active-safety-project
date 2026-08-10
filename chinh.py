@@ -415,6 +415,9 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                         lane_overlay = lane_detector.line_overlay(annotated_frame)
                     lane_frame = cv2.addWeighted(annotated_frame, 0.85, lane_overlay, 0.85, 0) \
                         if lane_overlay is not None else annotated_frame
+                    # Độ lệch tâm làn (từ lane detector) -> HUD cảnh báo chệch làn.
+                    metrics['lane_offset_m'] = lane_detector.lane_offset_m \
+                        if lane_detector.lane_detected else None
                     hud_frame = dashboard.render(lane_frame, metrics, lidar_obstacles, tracks=tracks)
                     cv2.imshow("ADAS Portfolio - Central Dashboard", hud_frame)
 

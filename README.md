@@ -46,11 +46,11 @@
 
 - **Multi-sensor perception** — a YOLOv8/v10 detector (optionally an ensemble, FP16 on GPU) for vehicles/VRUs, Hough-transform lane detection, and a LiDAR point-cloud processor with DBSCAN clustering.
 - **Calibration-free AEB** — the braking decision comes from the **LiDAR forward corridor** (metric, in-lane), so the car brakes for *any* in-path obstacle regardless of detector class. Camera boxes are for labels/HUD, not for the brake trigger.
-- **Committed safety arbiter** — a finite-state machine (`NORMAL → FOLLOW → EVADE → EMERGENCY_BRAKE`) with hysteresis and brake-as-fallback that removed the classic brake↔evade oscillation ("hesitation").
+- **Committed safety arbiter** — a finite-state machine (`NORMAL → FOLLOW → EVADE → EMERGENCY_BRAKE`) with hysteresis and brake-as-fallback that removed the classic brake↔evade oscillation ("hesitation") and **never creeps into a stationary obstacle** (obstacle-speed blocker detection + brake-latch persistence).
 - **L3 / DRIVE PILOT-style layer** — an ODD monitor (`NORMAL/DEGRADED/VIOLATION`), a takeover/minimal-risk-maneuver state machine (`TOR → MRM → SAFE_STOP`), a μ-based friction/stopping-distance model, and a rain-aware sensor-fusion weighting.
-- **Reinforcement-learning cruise control** — a lightweight pure-PyTorch DQN sets the desired speed from traffic density (fast when clear, slow when busy). It **only** proposes cruise speed; the AEB/MRM layer always overrides.
+- **Reinforcement-learning cruise control** — a lightweight pure-PyTorch DQN sets the desired speed from traffic density (fast when clear, slow when busy), under a hard **safety-speed cap** (stop-in-gap + time-gap). It **only** proposes cruise speed; the AEB/MRM layer always overrides.
 - **Repeatable validation** — a batch weather-profile harness (`evaluate_l3.py`) and a portable ScenarioRunner-style test harness (`run_scenarios.py`) that emit JSON/CSV KPI reports (collisions, min distance, min TTC, decel, jerk).
-- **CARLA-free self-test** — `selftest.py` exercises the geometry + safety math (**63 checks**) with no simulator running, so the "physics" is verifiable in CI.
+- **CARLA-free self-test** — `selftest.py` exercises the geometry + safety math (**70 checks**, including regression tests for the AEB creep bug) with no simulator running, so the "physics" is verifiable in CI.
 
 ## System architecture
 
@@ -124,7 +124,7 @@ stateDiagram-v2
 carla-adas-active-safety-project/
 ├── chinh.py                 # Main orchestrator (entry point) — per-frame pipeline
 ├── config.py                # Single source of truth: sensor geometry + safety thresholds
-├── selftest.py              # CARLA-free self-test of the geometry + safety math (63 checks)
+├── selftest.py              # CARLA-free self-test of the geometry + safety math (70 checks)
 ├── evaluate_l3.py           # Batch L3 validation across weather profiles → JSON report
 ├── run_scenarios.py         # Portable ScenarioRunner-style AEB/avoidance harness → JSON report
 ├── train_rl.py              # Offline DQN training (no CARLA) → weights/rl_speed_policy.pt
@@ -208,8 +208,9 @@ python chinh.py --town Town04 --seed 42 # choose map + deterministic seed
 
 **Validation & training:**
 ```bash
-python selftest.py                      # 63 CARLA-free checks (geometry + safety FSM)
-python run_scenarios.py                 # AEB/avoidance scenarios → logs/scenario_test_report.json
+python selftest.py                      # 70 CARLA-free checks (geometry + safety FSM)
+python run_scenarios.py                 # curated core suite (seeded) → logs/scenario_test_report.json
+python run_scenarios.py --scenarios all --limit 8   # wider run, capped at 8 recorded
 python evaluate_l3.py                   # weather-profile L3 eval → logs/mercedes_l3_validation_report.json
 python train_rl.py --episodes 300       # (re)train the DQN cruise policy (no CARLA needed)
 python export_models.py                 # export YOLO to TensorRT/ONNX (FP16)
@@ -225,7 +226,7 @@ paths. It depends only on NumPy, so it runs anywhere (including CI):
 ```bash
 python selftest.py
 # ...
-# KET QUA: 63 PASS / 0 FAIL
+# KET QUA: 70 PASS / 0 FAIL
 ```
 
 A GitHub Actions workflow ([`.github/workflows/selftest.yml`](.github/workflows/selftest.yml))
@@ -233,20 +234,36 @@ runs it on every push.
 
 ## Results
 
-Measured with the portable scenario harness (`run_scenarios.py`, 20 s / 800 frames each,
-full report at [`docs/scenario_test_report.json`](docs/scenario_test_report.json)):
+### Baseline validation — and a real defect it surfaced
+
+An early run of the portable scenario harness (`run_scenarios.py`, 20 s / 800 frames each;
+baseline report at [`docs/scenario_baseline_report.json`](docs/scenario_baseline_report.json))
+did exactly what validation is for — it exposed a genuine bug:
 
 | Scenario | Collisions | Min distance | Min TTC | Outcome |
 |----------|:----------:|:------------:|:-------:|:-------:|
 | Stationary object crossing | **0** | 1.1 m | 0.24 s | ✅ AEB stopped in time |
 | Dynamic object crossing (pedestrian) | **0** | 3.27 m | 0.70 s | ✅ Emergency brake |
-| Construction obstacle | 18 | 6.68 m | 1.70 s | ❌ Known limitation |
+| Construction obstacle | 18 | 6.68 m | 1.70 s | ❌ Drove into a static obstacle |
 
-**Honest status:** 2 of 3 scenarios pass. The construction-obstacle case is a **known
-failure** — the low-profile, wide static obstacle is under-clustered by the LiDAR
-corridor at the current point density, so the arbiter under-brakes. It is tracked in the
-[Roadmap](#roadmap) rather than hidden. This is the kind of gap real AV validation exists
-to surface.
+### Root cause → fix → regression test
+
+The construction-obstacle failure was traced to the **decision arbiter**, not the sensors:
+
+1. **Low-speed creep.** The "must-act" branch was gated on ego speed (`> 2 m/s`); once the
+   car slowed to a crawl it fell through to a *follow/slow* state and **crept into** the
+   stationary obstacle instead of stopping.
+2. **Brake-latch drop-out.** A low, sparse obstacle (cones) under-clusters in the LiDAR
+   corridor, so detection flickered — the latched emergency brake released on a single lost
+   frame and the car surged forward.
+
+Both are fixed in [`active_safety.py`](modules/active_safety.py): blocker detection now uses
+estimated **obstacle speed** (not ego speed) plus a low-speed **creep guard**, and the
+emergency brake **latches across brief detection drop-outs**. The cruise controller also
+gained a **safety-capped speed** (stop-in-gap + time-gap envelope). The fixes are locked in
+by **5 new regression checks** in `selftest.py` (**70 checks total, all passing**) that
+reproduce the exact failure and assert *stop-or-evade, never creep*. Full on-hardware CARLA
+re-validation of the curated suite is the remaining step (see [Roadmap](#roadmap)).
 
 The RL cruise policy meets its objective: **>30 km/h on a clear road, <30 km/h in dense
 traffic** (verified 35 vs 16 km/h). Training curve: [`weights/rl_train_curve.png`](weights/rl_train_curve.png).
@@ -264,17 +281,32 @@ traffic** (verified 35 vs 16 km/h). Training curve: [`weights/rl_train_curve.png
 - **Committed arbiter + hysteresis.** Braking and evasion used to oscillate frame-to-frame
   ("hesitation"). A committed decision with hysteresis and brake-as-fallback made the
   behavior decisive and stable.
+- **Never creep into a stationary obstacle.** A "blocker" is classified by *obstacle speed*
+  (ego − closing), not ego speed, so a static obstacle is handled decisively — evade if a
+  lane is clear, otherwise brake to a full stop and hold — even at a crawl. The latch
+  persists across brief LiDAR drop-outs so sparse obstacles (cones) can't release it.
+- **Safety-capped cruise.** On top of the RL/heuristic cruise speed sits a hard cap: the
+  vehicle may not cruise faster than it can comfortably stop within the gap ahead, plus a
+  minimum time-gap. Throughput optimization stays *inside* the safety envelope.
 - **Learning is sandboxed.** The DQN only proposes a cruise speed; it can never disable the
   safety layer. This mirrors how comfort/eco functions sit *under* the safety envelope in
   production ADAS.
+- **Lane model, not raw segments.** Hough segments are least-squares-fitted into a single
+  left/right lane, extrapolated across the ROI, EMA-smoothed over time, and used to fill a
+  drivable area and estimate lane-center offset (a lane-departure signal on the HUD).
+- **Reproducible V&V.** The scenario harness runs a curated, seeded core suite and writes a
+  bounded report with acceptance criteria and the thresholds used; comfort KPIs
+  (decel/jerk) exclude physically-impossible collision spikes so the numbers mean something.
 - **Performance tuning without changing the model.** Detection runs every N frames with
   Kalman interpolation in between, FP16 on GPU, down-sampled LiDAR before DBSCAN — tuned
   for ~20 FPS on a laptop GPU while keeping the same detector.
 
 ## Roadmap
 
-- [ ] Fix the construction-obstacle AEB gap (denser LiDAR corridor / negative-obstacle handling).
-- [ ] Replace Hough lane detection with a learned lane model for curves.
+- [x] Root-cause & fix the construction-obstacle collision — creep guard + brake-latch
+  persistence, locked in by regression tests.
+- [ ] Re-run the full curated suite on CARLA hardware to confirm the fix end-to-end.
+- [ ] Replace Hough lane detection with a learned lane model for sharp curves.
 - [ ] Radar fusion in the ODD-degraded (rain/fog) regime.
 - [ ] TensorRT INT8 path with accuracy guardrails.
 - [ ] Expand the ported scenario library toward the full ScenarioRunner catalog.

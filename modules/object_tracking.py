@@ -70,12 +70,14 @@ class EnsembleVehicleTracker:
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=max(2, len(self.models)))
 
     def _infer_single_model(self, model, optimized, rgb_frame):
-        kwargs = dict(classes=self.target_classes, verbose=False, imgsz=self.imgsz)
+        kwargs = dict(classes=self.target_classes, verbose=False, imgsz=self.imgsz,
+                      conf=self.conf_threshold, iou=self.nms_threshold)
         if not optimized:
-            # .pt: chỉ định thiết bị + fp16 (ultralytics 8.4: 'quantize' thay 'half').
+            # .pt: chỉ định thiết bị + FP16 (API chuẩn Ultralytics là 'half=True';
+            # 'quantize' KHÔNG phải tham số predict nên trước đây bị bỏ qua -> chưa
+            # thực sự chạy FP16). half chỉ bật trên GPU.
             kwargs["device"] = self.device
-            if self.half:
-                kwargs["quantize"] = 16
+            kwargs["half"] = self.half
         results = model(rgb_frame, **kwargs)[0]
         boxes, scores, class_ids = [], [], []
         for box in results.boxes:

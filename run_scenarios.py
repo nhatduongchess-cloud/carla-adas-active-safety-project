@@ -38,6 +38,20 @@ import scenario_library as lib
 
 REPORT_PATH = "logs/scenario_test_report.json"
 
+# Bộ nghiệm thu LÕI (curated) — cố định, có kiểm soát, đại diện đủ nhóm rủi ro
+# (bám xe / phanh gấp / vật tĩnh / người băng qua / công trường / cắt làn). Báo cáo
+# mặc định chạy đúng bộ này để KẾT QUẢ ỔN ĐỊNH, TÁI LẬP — thay vì đổ toàn bộ 15
+# kịch bản một cách tùy hứng. Dùng '--scenarios all' nếu muốn chạy hết.
+CORE_SUITE = [
+    "FollowLeadingVehicle",
+    "HardBrake",
+    "StationaryObjectCrossing",
+    "DynamicObjectCrossing",
+    "ConstructionObstacle",
+    "CutInFrom_left_Lane",
+]
+MAX_REPORTED_SCENARIOS = 8   # trần số kịch bản ghi vào 1 báo cáo (giữ báo cáo gọn)
+
 
 def _rgb(img):
     a = np.frombuffer(img.raw_data, dtype=np.uint8).reshape(img.height, img.width, 4)
@@ -79,6 +93,10 @@ def run_one(client, world, bp_lib, spec, shared, args):
 
         tm = client.get_trafficmanager(cfg.TM_PORT)
         tm.set_synchronous_mode(True)
+        try:
+            tm.set_random_device_seed(args.seed)   # autopilot TÁI LẬP được
+        except Exception:
+            pass
         tm.distance_to_leading_vehicle(ego, cfg.TM_LEADING_DISTANCE_M)
         ego.set_autopilot(True, tm.get_port())
         controller = EgoController(ego, tm, cfg)
@@ -179,23 +197,38 @@ def run_one(client, world, bp_lib, spec, shared, args):
 
 def main():
     parser = argparse.ArgumentParser(description="Ported ScenarioRunner test suite")
-    parser.add_argument('--scenarios', type=str, default='all', help="danh sách tên, hoặc 'all'")
+    parser.add_argument('--scenarios', type=str, default='core',
+                        help="'core' (bộ nghiệm thu lõi, mặc định) | 'all' | danh sách tên")
     parser.add_argument('--category', type=str, default=None,
                         help="lọc theo nhóm: lead|crossing|cutin|junction|oncoming")
     parser.add_argument('--seconds', type=float, default=20.0)
     parser.add_argument('--spawn', type=int, default=0, help="chỉ số spawn point cho ego")
+    parser.add_argument('--seed', type=int, default=42,
+                        help="hạt giống ngẫu nhiên -> kết quả TÁI LẬP")
+    parser.add_argument('--limit', type=int, default=MAX_REPORTED_SCENARIOS,
+                        help=f"trần số kịch bản ghi vào báo cáo (mặc định {MAX_REPORTED_SCENARIOS})")
     parser.add_argument('--clean', action='store_true',
                         help="dọn mọi xe/người/cảm biến còn sót trước khi chạy")
     args = parser.parse_args()
 
-    specs = lib.CATALOG
+    np.random.seed(args.seed)
+
+    if args.scenarios == 'all':
+        specs = list(lib.CATALOG)
+    elif args.scenarios == 'core':
+        order = {n: i for i, n in enumerate(CORE_SUITE)}
+        specs = sorted([s for s in lib.CATALOG if s.name in order], key=lambda s: order[s.name])
+    else:
+        want = [x.strip() for x in args.scenarios.split(',')]
+        specs = [s for s in lib.CATALOG if s.name in want]
     if args.category:
         specs = [s for s in specs if s.category == args.category]
-    if args.scenarios != 'all':
-        want = [x.strip() for x in args.scenarios.split(',')]
-        specs = [s for s in specs if s.name in want]
     if not specs:
         sys.exit(f"[Scn] Không có kịch bản khớp. Có: {lib.list_names()}")
+    # Giới hạn số kịch bản ghi vào báo cáo (giữ báo cáo gọn, có kiểm soát).
+    if args.limit and args.limit > 0 and len(specs) > args.limit:
+        print(f"[Scn] Giới hạn {len(specs)} -> {args.limit} kịch bản ghi báo cáo.")
+        specs = specs[:args.limit]
 
     client = carla.Client('127.0.0.1', 2000)
     client.set_timeout(20.0)
@@ -233,8 +266,22 @@ def main():
     finally:
         world.apply_settings(original)
 
+    meta = {
+        "seed": args.seed,
+        "seconds_per_scenario": args.seconds,
+        "fps": cfg.FPS,
+        "suite": args.scenarios,
+        "thresholds": {
+            "critical_ttc_s": cfg.CRITICAL_TTC_S,
+            "warning_ttc_s": cfg.WARNING_TTC_S,
+            "min_safe_dist_m": cfg.MIN_SAFE_DIST_M,
+            "lane_half_width_m": cfg.LANE_HALF_WIDTH_M,
+            "evade_lookahead_m": cfg.EVADE_LOOKAHEAD_M,
+        },
+    }
     report = write_report(REPORT_PATH, results,
-                          title="CARLA ScenarioRunner Port — AEB/Avoidance Test Report")
+                          title="CARLA ScenarioRunner Port — AEB/Avoidance Test Report",
+                          meta=meta)
     s = report["summary"]
     print("\n============== SCENARIO TEST SUMMARY ==============")
     print(f"  Kịch bản: {s['scenarios']} | ĐẠT: {s['passed']} | TRƯỢT: {s['failed']} "

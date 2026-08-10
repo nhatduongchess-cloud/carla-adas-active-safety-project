@@ -18,9 +18,18 @@ import math
 
 
 class KpiRecorder:
-    def __init__(self, dt: float, scenario: str = "scenario"):
+    # Trần giảm tốc/giật hợp lệ (m/s², m/s³). Phanh thật hiếm khi vượt ~1g; những
+    # gai vượt ngưỡng này là ARTIFACT VẬT LÝ lúc VA CHẠM (tốc độ tụt trong 1 tick),
+    # không phải phanh có điều khiển -> loại khỏi KPI êm ái để báo cáo phản ánh đúng.
+    DECEL_CAP_MS2 = 12.0     # ~1.2 g
+    JERK_CAP_MS3 = 60.0
+
+    def __init__(self, dt: float, scenario: str = "scenario",
+                 decel_cap_ms2: float = DECEL_CAP_MS2, jerk_cap_ms3: float = JERK_CAP_MS3):
         self.dt = dt
         self.scenario = scenario
+        self.decel_cap = decel_cap_ms2
+        self.jerk_cap = jerk_cap_ms3
         self.t, self.speed, self.dist, self.ttc, self.state = [], [], [], [], []
         self.decel, self.jerk = [], []
         self.collisions = 0
@@ -52,6 +61,12 @@ class KpiRecorder:
             state_counts[s] = state_counts.get(s, 0) + 1
         pct = {k: round(100.0 * v / max(1, n), 1) for k, v in state_counts.items()}
 
+        # Chỉ tính giảm tốc/giật CÓ ĐIỀU KHIỂN (dưới trần vật lý); gai vượt trần là
+        # do va chạm, đếm riêng như một chỉ số CHẤT LƯỢNG DỮ LIỆU.
+        controlled_decel = [d for d in self.decel if 0.0 <= d <= self.decel_cap]
+        controlled_jerk = [abs(j) for j in self.jerk if abs(j) <= self.jerk_cap]
+        impact_spikes = sum(1 for d in self.decel if d > self.decel_cap)
+
         return {
             "scenario": self.scenario,
             "duration_s": round(n * self.dt, 2),
@@ -59,8 +74,9 @@ class KpiRecorder:
             "collisions": self.collisions,
             "min_distance_m": round(min(finite_dist), 2) if finite_dist else None,
             "min_ttc_s": round(min(finite_ttc), 2) if finite_ttc else None,
-            "max_decel_ms2": round(max(self.decel), 2) if self.decel else 0.0,
-            "max_jerk_ms3": round(max(abs(j) for j in self.jerk), 2) if self.jerk else 0.0,
+            "max_decel_ms2": round(max(controlled_decel), 2) if controlled_decel else 0.0,
+            "max_jerk_ms3": round(max(controlled_jerk), 2) if controlled_jerk else 0.0,
+            "impact_decel_spikes": impact_spikes,   # số khung gai giảm tốc do va chạm
             "mean_speed_kmh": round(3.6 * sum(self.speed) / max(1, n), 1),
             "max_speed_kmh": round(3.6 * max(self.speed), 1) if self.speed else 0.0,
             "pct_time_state": pct,

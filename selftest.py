@@ -123,6 +123,42 @@ check("lan phai bi chan -> EVADE_LEFT",
       d.state == "EVADE_LEFT" and d.action == "LANE_CHANGE_LEFT")
 
 # ---------------------------------------------------------------------------
+# 2b) HỒI QUY: vật TĨNH ở tốc độ THẤP — sửa lỗi "xe bò thẳng vào vật gây va chạm"
+#     (bug ConstructionObstacle: braked=false, evaded=false, 18 va chạm).
+# ---------------------------------------------------------------------------
+print("[2b] Regression: low-speed stationary obstacle (no creep-into-collision)")
+
+# a) Ego BÒ CHẬM (1.5 m/s), vật tĩnh chắn làn, HAI làn bên chặn -> phải PHANH DỪNG,
+#    KHÔNG được hạ về SLOW rồi bò tới (đây chính là hành vi cũ gây va chạm).
+s = ActiveSafetySystem()
+s.update(1.5, [], [obs(9.2, 0.0), obs(9.0, 3.5), obs(9.0, -3.5)], dt)
+d = s.update(1.5, [], [obs(9.0, 0.0), obs(9.0, 3.5), obs(9.0, -3.5)], dt)
+check("bo cham + vat tinh chan lan -> BRAKE (khong creep/SLOW)", d.action == "BRAKE")
+
+# b) Ego bò chậm, vật tĩnh nhưng làn bên TRỐNG -> NÉ (tránh) thay vì bò tới.
+s = ActiveSafetySystem()
+s.update(1.5, [], [obs(20.2, 0.0)], dt)
+d = s.update(1.5, [], [obs(20.0, 0.0)], dt)
+check("bo cham + vat tinh, lan trong -> EVADE (tranh, khong bo toi)", "EVADE" in d.state)
+
+# c) LATCH bền vững qua khung MẤT DẤU: đang phanh mà cụm LiDAR chớp tắt 1 khung
+#    (vật thấp/thưa như cọc) -> VẪN giữ phanh, không lao tới.
+s = ActiveSafetySystem()
+s.update(10.0, [], [obs(5.0, 0.0)], dt)          # nearest 5 < min_safe -> emergency + latch
+d1 = s.update(10.0, [], [], dt)                  # mất dấu 1 khung
+check("mat dau 1 khung khi dang phanh -> van BRAKE (latch ben)", d1.action == "BRAKE")
+for _ in range(6):                               # mất dấu đủ lâu -> mới nhả
+    dN = s.update(10.0, [], [], dt)
+check("mat dau du lau (> tol) -> nha phanh ve NORMAL", dN.state == "NORMAL")
+
+# d) KHÔNG hồi quy phần bám xe: lead ĐANG CHẠY (~8 m/s) trong vùng cảnh báo -> FOLLOW,
+#    không phanh oan (chỉ vật CHẬM/ĐỨNG mới bị xử lý dứt khoát).
+s = ActiveSafetySystem()
+s.update(12.0, [], [obs(14.0, 0.0)], dt)
+d = s.update(12.0, [], [obs(13.8, 0.0)], dt)     # closing ~4 -> obstacle_speed ~8 m/s
+check("lead dang chay trong warning -> FOLLOW (khong phanh oan)", d.state == "FOLLOW")
+
+# ---------------------------------------------------------------------------
 # 3) MultiObjectTracker: ID ổn định + ước lượng vận tốc tương đối
 # ---------------------------------------------------------------------------
 print("[3] MultiObjectTracker (vat tien lai gan 5 m/s)")
@@ -354,6 +390,11 @@ ctrl = RLSpeedController("weights/_khong_ton_tai.pt")
 check("chua co policy -> heuristic", ctrl.policy is None)
 check("heuristic: duong vang -> >30 km/h", ctrl.desired_speed_kmh(5.0, 0.1, 60.0, 99.0) > 30.0)
 check("heuristic: duong dong -> <30 km/h", ctrl.desired_speed_kmh(5.0, 0.9, 10.0, 2.0) < 30.0)
+# Trần an toàn: đường "vắng" nhưng vật cản GẦN -> tốc độ tuần hành bị ghì mạnh.
+check("safety-cap: vat can gan 8m -> tuan hanh < 25 km/h",
+      ctrl.desired_speed_kmh(5.0, 0.1, 8.0, 3.0) < 25.0)
+check("safety-cap: khong vat can -> khong bi ghi (>30)",
+      ctrl.desired_speed_kmh(5.0, 0.1, None, None) > 30.0)
 
 # Turn intent
 check("intent_to_right('right') True", intent_to_right("right") is True)

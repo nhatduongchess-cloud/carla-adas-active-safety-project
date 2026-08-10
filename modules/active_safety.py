@@ -12,6 +12,12 @@ trước của LiDAR (khoảng cách mét thật, không cần calib camera), n�
 BẤT KỲ vật cản nào trong làn — kể cả vật YOLO không phân loại (người đi bộ, mảnh
 vỡ...). Camera/bbox chỉ dùng để gán nhãn hiển thị.
 
+CHỐNG "BÒ VÀO VẬT CẢN" (v2): vật chắn làn được nhận diện qua TỐC ĐỘ VẬT (ego trừ
+closing) chứ không qua tốc độ ego, cộng thêm creep-guard khi ego bò chậm — nên xe
+xử lý dứt khoát (né hoặc DỪNG HẲN) với vật TĨNH kể cả ở tốc độ thấp, thay vì hạ về
+SLOW rồi trôi tới. Phanh đã chốt còn được GIỮ qua vài khung mất dấu (latch) để vật
+thấp/thưa (cọc công trường) cho cụm LiDAR chớp tắt không làm nhả phanh sớm.
+
 Lớp này là LOGIC THUẦN (không import carla): nhận số liệu, trả về một quyết định.
 chinh.py mới là nơi dịch quyết định thành lệnh CARLA/Traffic Manager.
 """
@@ -74,10 +80,22 @@ class ActiveSafetySystem:
         self.brake_exit_factor = 1.4    # chỉ nhả phanh khi khoảng cách/TTC > ngưỡng × hệ số
         self.evade_min_ttc = 2.0        # chỉ né khi còn ĐỦ thời gian; ít hơn -> phanh
 
+        # Chống "bò vào vật cản" (creep-into-obstacle) — nguồn gốc va chạm với vật
+        # TĨNH ở tốc độ thấp. Một "lead" chậm hơn ngưỡng này coi là VẬT CHẮN: phải
+        # né hoặc DỪNG HẲN, tuyệt đối không hạ về SLOW rồi trôi tới.
+        self.follow_min_lead_speed = 3.0   # m/s (~10.8 km/h)
+        # Nếu ego đang bò chậm mà vẫn còn vật trong vùng cảnh báo -> bắt buộc dừng
+        # (không phụ thuộc ước lượng closing dễ nhiễu ở tốc độ thấp).
+        self.creep_speed_thresh = 3.0      # m/s
+
         # Trạng thái nội bộ để chốt/latch quyết định.
         self._brake_latched = False
         self._evade_dir = None          # 'LANE_CHANGE_LEFT' | 'LANE_CHANGE_RIGHT'
         self._evade_frames_left = 0
+        # Giữ phanh đã chốt qua vài khung MẤT DẤU (vật thấp/thưa như cọc công
+        # trường cho cụm LiDAR chớp tắt) -> không nhả phanh rồi lao tới.
+        self.lost_frames_tol = 4
+        self._lost_frames = 0
 
         self.prev_nearest: float = math.inf  # cho ước lượng tốc độ tiến lại gần
 
@@ -181,13 +199,27 @@ class ActiveSafetySystem:
 
         decision = SafetyDecision()
 
+        def _emit_brake(state, level):
+            decision.state = state
+            decision.action = "BRAKE"
+            decision.brake = level
+            decision.collision_risk = True
+
         if not math.isfinite(nearest):
-            # Mất dấu vật cản -> nhả chốt và trở về lái thường.
+            # MẤT DẤU vật cản. Nếu ĐANG chốt phanh, giữ thêm vài khung phòng khi cụm
+            # LiDAR của vật thấp/thưa (cọc công trường) chớp tắt -> KHÔNG nhả phanh
+            # rồi lao tới. Chỉ thực sự trở về lái thường khi mất dấu đủ lâu.
+            if self._brake_latched and self._lost_frames < self.lost_frames_tol:
+                self._lost_frames += 1
+                _emit_brake("BRAKE_HOLD", 0.7)
+                return decision
             self.prev_nearest = math.inf
             self._brake_latched = False
             self._evade_dir = None
             self._evade_frames_left = 0
+            self._lost_frames = 0
             return decision  # NORMAL / DRIVE
+        self._lost_frames = 0
 
         # Khoảng cách an toàn động = quãng đường dừng (theo μ) × hệ số thời tiết + đệm.
         brake_dist = stopping_distance(ego_speed_ms, self.mu, self.reaction_time)
@@ -195,10 +227,21 @@ class ActiveSafetySystem:
         critical = (nearest < self.min_safe_dist) or (ttc < self.critical_ttc)
         warning = (nearest < dyn_safe) or (ttc < self.warning_ttc)
 
+        # Ước lượng TỐC ĐỘ VẬT CẢN (m/s): ego trừ tốc độ tiến lại gần. Vật đứng yên ->
+        # closing ≈ ego -> obstacle_speed ≈ 0. Không phụ thuộc ngưỡng tốc độ ego, nên
+        # xe vẫn xử lý dứt khoát vật tĩnh KỂ CẢ khi đang bò chậm (sửa lỗi "bò vào vật").
+        obstacle_speed = max(0.0, ego_speed_ms - max(closing, 0.0))
+        lead_is_slow = obstacle_speed < self.follow_min_lead_speed
+        # Chốt an toàn độc lập với ước lượng closing (dễ nhiễu ở tốc độ thấp): ego bò
+        # chậm + vật còn trong vùng cảnh báo -> BẮT BUỘC hành động (dừng/né).
+        creeping = (ego_speed_ms < self.creep_speed_thresh) and (nearest < dyn_safe)
+        must_act = (nearest < self.evade_lookahead) and (lead_is_slow or creeping)
+
         decision.threat = {
             "distance_m": round(nearest, 2),
             "ttc_s": round(ttc, 2) if math.isfinite(ttc) else None,
             "closing_ms": round(closing, 2),
+            "obstacle_speed_ms": round(obstacle_speed, 2),
             "label": self._label_for(nearest, fused_detections),
         }
 
@@ -206,14 +249,6 @@ class ActiveSafetySystem:
         # Ngưỡng thoát (hysteresis): chỉ rời trạng thái phanh khi ĐÃ RÕ an toàn.
         is_clear = (nearest > dyn_safe * self.brake_exit_factor) and \
                    (ttc > self.warning_ttc * self.brake_exit_factor)
-        # "Lead chậm/đứng yên": tiến lại gần ~ bằng tốc độ ego (vật gần như đứng im).
-        lead_is_slow = ego_speed_ms > 2.0 and closing >= self.lead_slow_ratio * ego_speed_ms
-
-        def _emit_brake(state, level):
-            decision.state = state
-            decision.action = "BRAKE"
-            decision.brake = level
-            decision.collision_risk = True
 
         # 1) ĐANG PHANH -> giữ tới khi rõ an toàn (không nhả sớm gây phân vân).
         if self._brake_latched:
@@ -254,10 +289,11 @@ class ActiveSafetySystem:
                 return decision
 
         # 4) Vật CHẬM/ĐỨNG chắn đường trong tầm né -> DỨT KHOÁT: né (nếu đủ điều kiện)
-        #    hoặc PHANH. KHÔNG bao giờ chỉ "SLOW" rồi trôi vào vật cản.
-        if lead_is_slow and nearest < self.evade_lookahead:
+        #    hoặc PHANH DỪNG HẲN. KHÔNG bao giờ chỉ "SLOW" rồi trôi vào vật cản.
+        if must_act:
             can_evade = (self.enable_evasion and (left_clear or right_clear)
-                         and ttc >= self.evade_min_ttc)
+                         and ttc >= self.evade_min_ttc
+                         and nearest > self.min_safe_dist)
             if can_evade:
                 self._evade_dir = "LANE_CHANGE_RIGHT" if right_clear else "LANE_CHANGE_LEFT"
                 self._evade_frames_left = max(1, int(self.evade_commit_s / max(dt, 1e-3)))
@@ -265,11 +301,12 @@ class ActiveSafetySystem:
                 decision.action = self._evade_dir
                 decision.collision_risk = True
             else:
+                # Không né được (hai làn chặn / hết thời gian) -> phanh dừng & CHỐT lại.
                 self._brake_latched = True
                 _emit_brake("BRAKE_TO_STOP", 1.0)
             return decision
 
-        # 5) Lead đang chạy, chỉ trong vùng cảnh báo -> bám & giảm tốc (để TM lo).
+        # 5) Lead ĐANG CHẠY (đủ nhanh để bám), chỉ trong vùng cảnh báo -> giảm tốc bám.
         if warning:
             decision.state = "FOLLOW"
             decision.action = "SLOW"

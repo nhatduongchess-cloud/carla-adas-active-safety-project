@@ -125,6 +125,11 @@ class DashboardView:
         if metrics.get('rl_target_kmh') is not None:
             rows.insert(2, (f"RL CRUISE (rho {metrics.get('density', 0.0):.1f})",
                             f"{metrics['rl_target_kmh']:.0f} km/h", C_ACCENT))
+        lane_off = metrics.get('lane_offset_m')
+        if lane_off is not None:
+            departing = abs(lane_off) > 0.7   # lệch > 0.7 m -> cảnh báo chệch làn
+            rows.append(("LANE OFFSET", f"{lane_off:+.2f} m",
+                         C_RED if departing else C_GREEN))
         for lbl, val, col in rows:
             cv2.putText(canvas, lbl, (x0, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, C_GRAY, 1)
             cv2.putText(canvas, val, (x0 + 250, y), cv2.FONT_HERSHEY_SIMPLEX, 0.58, col, 2)

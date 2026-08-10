@@ -52,12 +52,20 @@ def assess_profile(name, expect_odd, actual_odd, kpi_summary,
     }
 
 
-def build_report(results, title="Mercedes-Benz DRIVE PILOT L3 Validation Report"):
+def build_report(results, title="Mercedes-Benz DRIVE PILOT L3 Validation Report", meta=None):
+    """Gói kết quả thành báo cáo V&V. `meta` (tùy chọn) ghi lại NGỮ CẢNH KIỂM THỬ
+    (seed, ngưỡng cấu hình, tiêu chí nghiệm thu...) để báo cáo TÁI LẬP được — đúng
+    tinh thần một artifact kỹ thuật, không phải log tùy hứng."""
     total = len(results)
     passed = sum(1 for r in results if r["pass"])
-    return {
+    report = {
         "title": title,
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "acceptance_criteria": {
+            "collisions": "== 0",
+            "reacted": "true (FSM rời NORMAL khi có vật cản trong làn)",
+            "note": "Chỉ số êm ái (max_decel/jerk) đã loại gai va chạm; xem impact_decel_spikes.",
+        },
         "summary": {
             "scenarios": total,
             "passed": passed,
@@ -66,10 +74,13 @@ def build_report(results, title="Mercedes-Benz DRIVE PILOT L3 Validation Report"
         },
         "scenarios": results,
     }
+    if meta:
+        report["run"] = meta
+    return report
 
 
-def write_report(path, results, title="Mercedes-Benz DRIVE PILOT L3 Validation Report"):
-    report = build_report(results, title=title)
+def write_report(path, results, title="Mercedes-Benz DRIVE PILOT L3 Validation Report", meta=None):
+    report = build_report(results, title=title, meta=meta)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
