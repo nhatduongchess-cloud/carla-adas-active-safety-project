@@ -73,11 +73,11 @@ class EnsembleVehicleTracker:
         kwargs = dict(classes=self.target_classes, verbose=False, imgsz=self.imgsz,
                       conf=self.conf_threshold, iou=self.nms_threshold)
         if not optimized:
-            # .pt: chỉ định thiết bị + FP16 (API chuẩn Ultralytics là 'half=True';
-            # 'quantize' KHÔNG phải tham số predict nên trước đây bị bỏ qua -> chưa
-            # thực sự chạy FP16). half chỉ bật trên GPU.
+            # .pt: chỉ định thiết bị + độ chính xác suy luận. Ultralytics 8.4 HỢP NHẤT
+            # cờ precision vào 'quantize' (16=FP16, 32=FP32); 'half'/'int8' đã DEPRECATED
+            # và chính chúng phát cảnh báo. FP16 chỉ bật trên GPU (self.half=False khi CPU).
             kwargs["device"] = self.device
-            kwargs["half"] = self.half
+            kwargs["quantize"] = 16 if self.half else 32
         results = model(rgb_frame, **kwargs)[0]
         boxes, scores, class_ids = [], [], []
         for box in results.boxes:

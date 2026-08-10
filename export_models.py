@@ -29,7 +29,8 @@ IMGSZ = 640
 
 def export(pt, fmt):
     print(f"\n[Export] {pt}  ->  {fmt}  (FP16, imgsz={IMGSZ}) ...")
-    YOLO(pt).export(format=fmt, half=True, imgsz=IMGSZ, device=0)
+    # Ultralytics 8.4: 'quantize=16' (FP16) thay cho 'half=True' đã deprecated.
+    YOLO(pt).export(format=fmt, quantize=16, imgsz=IMGSZ, device=0)
 
 
 def main():
