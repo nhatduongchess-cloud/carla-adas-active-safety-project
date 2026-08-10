@@ -54,6 +54,11 @@ logs/
 telemetry_log_*.csv
 *.log
 
+# --- Bản nháp cũ đã bị thay thế -----------------------------------------------
+# main.py là draft cũ (import 'midas_depth' không tồn tại, sai chữ ký
+# ActiveSafetySystem) -> chinh.py là entry point thực. Không đưa lên repo.
+/main.py
+
 # --- OS / cloud-sync junk -----------------------------------------------------
 .DS_Store
 Thumbs.db
