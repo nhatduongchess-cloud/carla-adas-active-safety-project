@@ -16,8 +16,13 @@
 
 > **Portfolio project.** An end-to-end study of the perception → fusion → safety-decision loop at the core of every ADAS/AD stack, built solo in the CARLA simulator. It prioritizes correct fundamentals and honest verification over feature count. See [**Scope & status**](#scope--status) for exactly what is demonstrated versus in progress.
 
-> _Demo: drop a recording at `docs/demo.gif` and it renders here._
-> <!-- ![Demo](docs/demo.gif) -->
+<div align="center">
+
+![Live ADAS demo — perception, fusion and committed active safety in CARLA](docs/demo.gif)
+
+*Live run in CARLA `Town10HD`. Left: camera with YOLO detections + lane overlay. Right: live ADAS dashboard. The clip walks the committed active-safety arbiter through three states — **`AEB: NORMAL`** (free-flow cruise, obstacle tracked at range) → **`AEB: BRAKE_HOLD`** (in-path hazard, TTC collapsing) → **`AEB: BRAKE_TO_STOP`** (ego brought to a full stop), all under `L3_ACTIVE` / `ODD:NORMAL`.*
+
+</div>
 
 ---
 
