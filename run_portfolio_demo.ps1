@@ -1,4 +1,4 @@
-# run_portfolio_demo.ps1
+﻿# run_portfolio_demo.ps1
 # One-shot portfolio demo + results runner (stable envelope).
 # Usage (from the project root, with CARLA server already running):
 #   powershell -ExecutionPolicy Bypass -File .\run_portfolio_demo.ps1
@@ -29,7 +29,7 @@ RunStep 'Kiem tra server san sang' @('wait_for_carla.py','--timeout','30')
 
 $common = @('--town','Town02','--seed','42',
             '--performance-profile','low-memory','--runtime-mode','async-stable',
-            '--duration','30')
+            '--duration','20')
 
 # 1) Clip A - clear-road driving
 Read-Host "`nBAT phan mem quay man hinh, roi nhan Enter de chay CLIP A (lai duong thoang)"
@@ -54,3 +54,4 @@ Write-Host "`n==== XONG ====" -ForegroundColor Green
 Write-Host "Cac file ket qua nam trong .\logs\ :"
 Write-Host "  demo_clear.json, demo_hazard.json, demo_mrm.json, portfolio_core_3seed.json"
 Write-Host "Gui/dan cac file nay lai cho Claude de dien bang ket qua vao README."
+

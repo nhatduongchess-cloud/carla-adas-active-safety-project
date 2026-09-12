@@ -1,9 +1,9 @@
-# run_demo_safe.ps1
-# Quay 3 clip demo mà KHÔNG bị B01 làm hỏng buổi quay.
-# Chiến lược: mỗi clip chạy ngắn (--duration 12) để kết thúc TRUOC cua so crash ~20s;
-# sau mỗi clip kiểm tra server; nếu B01 crash giữa chừng thì tự mở lại server và quay lại clip đó.
+﻿# run_demo_safe.ps1
+# Quay 3 clip demo mÃ  KHÃ”NG bá»‹ B01 lÃ m há»ng buá»•i quay.
+# Chiáº¿n lÆ°á»£c: má»—i clip cháº¡y ngáº¯n (--duration 12) Ä‘á»ƒ káº¿t thÃºc TRUOC cua so crash ~20s;
+# sau má»—i clip kiá»ƒm tra server; náº¿u B01 crash giá»¯a chá»«ng thÃ¬ tá»± má»Ÿ láº¡i server vÃ  quay láº¡i clip Ä‘Ã³.
 #
-# Cách dùng (đứng tại thư mục dự án):
+# CÃ¡ch dÃ¹ng (Ä‘á»©ng táº¡i thÆ° má»¥c dá»± Ã¡n):
 #   powershell -ExecutionPolicy Bypass -File .\run_demo_safe.ps1
 #
 # Reports luu trong .\logs\ . Bat/tat phan mem quay man hinh tai cac dau nhac.
@@ -41,7 +41,7 @@ function Run-Clip {
         Read-Host "`n[$Name] (lan $try) BAT quay man hinh, roi nhan Enter de chay"
         $cliArgs = @('-u','chinh.py','--town','Town02','--seed','42','--spawn-index',"$Spawn",
                      '--performance-profile','low-memory','--runtime-mode','async-stable',
-                     '--duration','12','--run-report',"logs\$Report") + $Extra
+                     '--duration','20','--run-report',"logs\$Report") + $Extra
         & $py @cliArgs
         Read-Host "[$Name] TAT quay. Nhan Enter"
         if (Test-Server) {
@@ -68,3 +68,4 @@ Write-Host "Reports: .\logs\demo_clear.json, demo_hazard.json, demo_mrm.json"
 Write-Host "Gui/dan cac file JSON nay cho Claude de dien bang ket qua vao README."
 Write-Host "`nMEO: neu clip B (AEB dynamic) hay crash, dung spawn-index 0 lam clip AEB tinh"
 Write-Host "     (xe do chan san truoc mui, AEB giu phanh - da xac nhan on dinh, khong crash)."
+

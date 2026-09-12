@@ -1,4 +1,4 @@
-# run_demo_aeb_mrm.ps1
+﻿# run_demo_aeb_mrm.ps1
 # Chay lai 2 clip con thieu report: AEB va MRM (moi clip 12s de ne B01 ~20s).
 # Tu kiem tra server sau moi clip; neu crash -> mo lai server + quay lai clip do.
 #
@@ -9,8 +9,8 @@
 # Report chi ghi khi run KET THUC (het duration, hoac crash bat duoc); hard-crash thi khong ghi.
 
 param(
-    [int]$AebSeconds = 25,
-    [int]$MrmSeconds = 15
+    [int]$AebSeconds = 20,
+    [int]$MrmSeconds = 20
 )
 
 $ErrorActionPreference = 'Continue'
@@ -58,3 +58,4 @@ Write-Host "Reports: logs\demo_hazard.json (AEB), logs\demo_mrm.json (MRM)"
 Write-Host "Bao Claude doc 2 file nay de dien not bang ket qua vao README."
 Write-Host "`n(Neu muon AEB DONG - xe dam vao chuong ngai - doi dong AEB thanh:"
 Write-Host "   Run-Clip -Name 'AEB' -Spawn 2 -Extra @('--hazard') -Report 'demo_hazard.json'  )"
+
