@@ -35,12 +35,14 @@ transfuser/
 
 # --- Datasets & training output (regenerable — see README) --------------------
 dataset/
+carla_dataset_v1/
 # Ultralytics detector training / validation runs (curves, batch previews)
 runs/
 
 # --- Model weights ------------------------------------------------------------
 # Standard detector weights are downloadable; do not bloat the repo with them.
 *.pt
+*.pth
 *.onnx
 *.engine
 *.trt
@@ -64,3 +66,21 @@ telemetry_log_*.csv
 Thumbs.db
 desktop.ini
 ehthumbs.db
+
+# --- Portfolio-public exclusions ---------------------------------------------
+# V&V evidence, scratch and dev-setup template: kept local, summarised in docs/.
+output/
+tmp/
+Setup codex/
+Claude outputs/
+
+# Internal working docs (kept local, not published to the portfolio repo)
+CLAUDE_HANDOFF.md
+docs/LUNA_END_TO_END_RECOVERY_PLAN.md
+docs/SOL_END_TO_END_EXECUTION_PLAN.md
+docs/TWO_WEEK_RESOURCE_SCALED_EXECUTION.md
+docs/ENGINEERING_PROGRESS.md
+docs/BUG_LEDGER.md
+docs/PORTFOLIO_SCOPE_PLAN.md
+docs/README_original.md
+docs/README_PORTFOLIO_DRAFT.md

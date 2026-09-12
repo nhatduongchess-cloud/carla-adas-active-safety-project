@@ -26,12 +26,16 @@ class ODDMonitor:
         self.snr_violation = snr_violation
         self.degraded_speed_cap = degraded_speed_cap_kmh
 
-    def classify(self, conditions: dict) -> dict:
+    def classify(self, conditions: dict, sensor_health=None) -> dict:
         v = conditions["visibility_m"]
         mu = conditions["mu"]
         snr = conditions.get("snr", 1.0)
 
-        if v < self.vis_violation or mu < self.mu_violation or snr < self.snr_violation:
+        range_redundancy_lost = bool(
+            sensor_health and sensor_health.get("range_redundancy_lost"))
+
+        if (range_redundancy_lost or v < self.vis_violation
+                or mu < self.mu_violation or snr < self.snr_violation):
             state = self.VIOLATION
             speed_cap = 0.0
             gap_multiplier = 2.0
@@ -49,6 +53,7 @@ class ODDMonitor:
             "speed_cap_kmh": speed_cap,
             "gap_multiplier": gap_multiplier,
             # "critical" = điều kiện tụt rất nhanh -> bỏ qua chờ TOR, vào MRM ngay.
-            "critical": v < 10.0 or mu < 0.2,
+            "critical": range_redundancy_lost or v < 10.0 or mu < 0.2,
+            "reason": "lidar_and_radar_unavailable" if range_redundancy_lost else None,
             "conditions": conditions,
         }

@@ -29,6 +29,8 @@ class SensorFusion:
         depth_min_m: float = 1.0,
         depth_max_m: float = 60.0,
         bbox_margin_px: float = 12.0,
+        camera_pose=None,
+        lidar_pose=None,
     ) -> None:
         f = width / (2.0 * math.tan(math.radians(fov) / 2.0))
         self.fx = self.fy = f
@@ -40,6 +42,23 @@ class SensorFusion:
         self.depth_min_m = depth_min_m
         self.depth_max_m = depth_max_m
         self.bbox_margin_px = bbox_margin_px
+        self.camera_pose = tuple(camera_pose or (0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        self.lidar_pose = tuple(lidar_pose or (0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        self._r_vehicle_camera = self._rotation_matrix(*self.camera_pose[3:])
+        self._r_vehicle_lidar = self._rotation_matrix(*self.lidar_pose[3:])
+        self._t_camera = np.asarray(self.camera_pose[:3], dtype=float)
+        self._t_lidar = np.asarray(self.lidar_pose[:3], dtype=float)
+
+    @staticmethod
+    def _rotation_matrix(roll_deg, pitch_deg, yaw_deg):
+        roll, pitch, yaw = np.radians([roll_deg, pitch_deg, yaw_deg])
+        cr, sr = np.cos(roll), np.sin(roll)
+        cp, sp = np.cos(pitch), np.sin(pitch)
+        cy, sy = np.cos(yaw), np.sin(yaw)
+        rx = np.array([[1, 0, 0], [0, cr, -sr], [0, sr, cr]], dtype=float)
+        ry = np.array([[cp, 0, sp], [0, 1, 0], [-sp, 0, cp]], dtype=float)
+        rz = np.array([[cy, -sy, 0], [sy, cy, 0], [0, 0, 1]], dtype=float)
+        return rz @ ry @ rx
 
     # --------------------------------------------------------------------- #
     def _project_cluster(self, centroid):
@@ -49,12 +68,16 @@ class SensorFusion:
         Khung quang camera: X phải, Y xuống, Z tiến.
           X_cam = sign * y_lat ; Y_cam = -z_up ; Z_cam = x_fwd
         """
-        x_fwd, y_lat, z_up = centroid[0], centroid[1], centroid[2]
-        if x_fwd <= 0.1:
+        lidar_point = np.asarray(centroid[:3], dtype=float)
+        vehicle_point = self._r_vehicle_lidar @ lidar_point + self._t_lidar
+        camera_point = self._r_vehicle_camera.T @ (vehicle_point - self._t_camera)
+        x_cam, y_cam, z_cam = camera_point
+        if x_cam <= 0.1:
             return None  # phía sau / quá gần, bỏ qua
-        u = self.fx * (self.lidar_y_sign * y_lat) / x_fwd + self.cx
-        v = self.fy * (-z_up) / x_fwd + self.cy
-        return u, v, x_fwd, y_lat
+        u = self.fx * (self.lidar_y_sign * y_cam) / x_cam + self.cx
+        v = self.fy * (-z_cam) / x_cam + self.cy
+        # Range/lateral vẫn ở LiDAR frame để khớp tracker + swept path hiện tại.
+        return u, v, float(lidar_point[0]), float(lidar_point[1])
 
     def _mono_distance(self, det: Dict[str, Any]) -> float:
         """Ước lượng khoảng cách từ chiều cao pixel của box (pinhole đơn mắt)."""
@@ -73,30 +96,42 @@ class SensorFusion:
         """Trả về danh sách detection đã bổ sung 'distance_m' và 'distance_source'."""
         # Chiếu trước toàn bộ cụm LiDAR sang tọa độ ảnh (u, v, forward_dist).
         projected = []
-        for obs in lidar_obstacles:
+        for obs_index, obs in enumerate(lidar_obstacles):
             p = self._project_cluster(obs["centroid"])
             if p is not None:
-                projected.append(p)
+                projected.append((obs_index, *p))
 
-        fused: List[Dict[str, Any]] = []
-        for det in detections_2d:
+        # Ghép one-to-one toàn cục theo khoảng cách chuẩn hóa tới tâm bbox. Một
+        # cluster không còn bị gán đồng thời cho nhiều detection chồng lấn.
+        candidates = []
+        for det_index, det in enumerate(detections_2d):
             x1, y1, x2, y2 = det["bbox"]
             m = self.bbox_margin_px
-
-            # Tìm cụm LiDAR gần nhất mà điểm chiếu rơi vào (mở rộng biên) box.
-            best_dist = None
-            best_lat = None
-            for u, v, fwd, lat in projected:
+            bw, bh = max(1.0, x2 - x1), max(1.0, y2 - y1)
+            uc, vc = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+            for obs_index, u, v, fwd, lat in projected:
                 if (x1 - m) <= u <= (x2 + m) and (y1 - m) <= v <= (y2 + m):
-                    if best_dist is None or fwd < best_dist:
-                        best_dist = fwd
-                        best_lat = lat
+                    score = ((u - uc) / bw) ** 2 + ((v - vc) / bh) ** 2
+                    candidates.append((score, det_index, obs_index, fwd, lat))
+        candidates.sort(key=lambda item: item[0])
+        assignments = {}
+        used_obstacles = set()
+        for _score, det_index, obs_index, fwd, lat in candidates:
+            if det_index not in assignments and obs_index not in used_obstacles:
+                assignments[det_index] = (fwd, lat)
+                used_obstacles.add(obs_index)
+
+        fused: List[Dict[str, Any]] = []
+        for det_index, det in enumerate(detections_2d):
+            x1, y1, x2, y2 = det["bbox"]
 
             enriched = det.copy()
-            if best_dist is not None:
+            if det_index in assignments:
+                best_dist, best_lat = assignments[det_index]
                 enriched["distance_m"] = round(float(best_dist), 2)
                 enriched["lateral_m"] = round(float(best_lat), 2)
                 enriched["distance_source"] = "lidar"
+                enriched["distance_std_m"] = round(max(0.15, 0.015 * best_dist), 2)
             else:
                 dist = self._mono_distance(det)
                 # Ước lượng lệch ngang từ tâm box qua phép chiếu ngược pinhole.
@@ -105,6 +140,7 @@ class SensorFusion:
                 enriched["distance_m"] = round(float(dist), 2)
                 enriched["lateral_m"] = round(float(lateral), 2)
                 enriched["distance_source"] = "mono"
+                enriched["distance_std_m"] = round(max(1.0, 0.20 * dist), 2)
             fused.append(enriched)
 
         return fused

@@ -1,7 +1,6 @@
 """Scenario manager module defining autonomous driving test cases directly via CARLA API."""
 
 import carla
-from typing import List
 
 
 class ScenarioManager:

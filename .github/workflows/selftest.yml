@@ -23,5 +23,5 @@ jobs:
       - name: Install minimal dependencies
         run: python -m pip install --upgrade pip numpy
 
-      - name: Run self-test (70 checks)
+      - name: Run self-test (106 checks)
         run: python selftest.py

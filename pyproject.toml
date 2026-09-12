@@ -1,0 +1,45 @@
+# Tooling configuration for the CARLA ADAS project.
+# Runtime dependencies live in requirements.txt (ranges) / requirements.lock (pinned).
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+# Vendored upstream repos and generated data are not our code / not tracked.
+extend-exclude = [
+    "scenario_runner", "ros-bridge", "rllib-integration", "transfuser",
+    "third_party", "carla_dataset_v1", "output", "runs", "logs", "tmp",
+    ".venv", ".venv-1", ".venvCarLa", "myenv", "env",
+]
+
+[tool.ruff.lint]
+# Correctness-focused gate that the codebase passes today:
+#   F  - pyflakes (undefined names, unused imports, real logic smells)
+#   E9 - syntax / runtime errors
+#   B  - flake8-bugbear (likely-bug anti-patterns)
+# Style / modernization rule sets (E1-E7, W, I, UP) are intentionally NOT
+# enforced here to avoid large mechanical diffs on an existing codebase.
+select = ["F", "E9", "B"]
+# Verified non-issues on this codebase:
+#   B905 - zip() without strict= (stylistic; targets Python 3.10+ semantics)
+#   B007 - unused loop control variable (cosmetic)
+#   B023 - loop-variable closure in radar_processor._cluster is consumed in the
+#          same iteration (verified benign), not a deferred-binding bug.
+ignore = ["B905", "B007", "B023"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files may keep imports after sys.path shims and use broad patterns.
+"test_*.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+# Static type-checking is enforced on the pure "safety-evidence core": the shared
+# perception contracts, the fail-closed acceptance report, the runtime teardown
+# coordinator, and the pipeline metrics. The wider sensor/control stack depends on
+# the untyped CARLA client and is covered by the test suite instead.
+files = [
+    "modules/perception_contracts.py",
+    "modules/runtime_report.py",
+    "modules/runtime_cleanup.py",
+    "modules/pipeline_metrics.py",
+]

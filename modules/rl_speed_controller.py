@@ -29,15 +29,15 @@ class RLSpeedController:
                 from rl_agent import QNet
             except ImportError:
                 from modules.rl_agent import QNet
-            ckpt = torch.load(policy_path, map_location="cpu")
+            ckpt = torch.load(policy_path, map_location="cpu", weights_only=True)
             net = QNet(ckpt["obs_dim"], ckpt["n_actions"])
             net.load_state_dict(ckpt["model"])
             net.eval()
             self.policy = net
             self._torch = torch
-            print(f"[RL] Đã nạp policy tốc độ: {policy_path}")
+            print(f"[RL] Loaded speed policy: {policy_path}")
         except Exception as e:
-            print(f"[RL] Chưa có policy ({e}) -> dùng heuristic theo mật độ.")
+            print(f"[RL] Policy unavailable ({e}); using density heuristic.")
 
     def _heuristic_kmh(self, density):
         if density < 0.3:

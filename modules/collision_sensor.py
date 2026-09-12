@@ -10,16 +10,20 @@ import carla
 
 
 class CollisionSensor:
-    def __init__(self, world, ego_vehicle, fps=20, debounce_s=1.0):
+    def __init__(self, world, ego_vehicle, fps=20, debounce_s=1.0, on_spawn=None):
         bp = world.get_blueprint_library().find('sensor.other.collision')
         self.sensor = world.spawn_actor(bp, carla.Transform(), attach_to=ego_vehicle)
+        if on_spawn is not None:
+            on_spawn(self.sensor)
 
         self.count = 0
         self.last_other = None
         self.last_intensity = 0.0
         self.history = []                       # [{'frame', 'other', 'intensity'}]
         self._debounce_frames = max(1, int(debounce_s * fps))
-        self._last_frame = -(10 ** 9)
+        # Theo dõi frame tiếp xúc cuối của TỪNG actor. Phải cập nhật cả callback
+        # bị bỏ qua; nếu không, một va chạm kéo dài sẽ bị đếm lại mỗi debounce_s.
+        self._last_contact_by_actor = {}
 
         # Callback chạy trong thread cảm biến; các thao tác đơn giản an toàn nhờ GIL.
         self.sensor.listen(self._on_collision)
@@ -28,13 +32,16 @@ class CollisionSensor:
         imp = event.normal_impulse
         intensity = (imp.x ** 2 + imp.y ** 2 + imp.z ** 2) ** 0.5
 
-        # Bỏ qua các callback dội lại của cùng một cú va (trong cửa sổ debounce).
-        if event.frame - self._last_frame <= self._debounce_frames:
+        other = event.other_actor
+        other_id = other.id if other is not None else -1
+        last_contact = self._last_contact_by_actor.get(other_id, -(10 ** 9))
+        self._last_contact_by_actor[other_id] = event.frame
+
+        # Callback liên tục với cùng actor là một collision episode duy nhất.
+        if event.frame - last_contact <= self._debounce_frames:
             return
-        self._last_frame = event.frame
 
         self.count += 1
-        other = event.other_actor
         self.last_other = other.type_id if other is not None else 'unknown'
         self.last_intensity = intensity
         self.history.append({
@@ -45,5 +52,10 @@ class CollisionSensor:
         print(f"[Collision] ❌ #{self.count} với '{self.last_other}' (impulse {intensity:.0f})")
 
     def stop(self):
-        if self.sensor is not None and self.sensor.is_alive:
-            self.sensor.stop()
+        # CARLA may already be disconnected when cleanup runs.  Treat a failed
+        # RPC here as a cleanup warning rather than masking the original error.
+        try:
+            if self.sensor is not None and self.sensor.is_alive:
+                self.sensor.stop()
+        except Exception as exc:
+            print(f"[Collision] Cảnh báo không thể dừng sensor: {exc}")

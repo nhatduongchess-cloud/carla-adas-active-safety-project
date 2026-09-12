@@ -49,3 +49,21 @@ class LateralController:
         normalized_steering = float(
             np.clip(total_steering / np.radians(30.0), -1.0, 1.0))
         return normalized_steering
+
+    def compute_path_steering(self, path_points, forward_speed: float,
+                              wheelbase_m: float = 2.85,
+                              max_steer_deg: float = 35.0) -> float:
+        """Pure-pursuit trên path đã đổi sang ego local frame (x tiến, y phải)."""
+        if not path_points:
+            return 0.0
+        lookahead = float(np.clip(4.0 + 0.55 * max(0.0, forward_speed), 5.0, 15.0))
+        target = path_points[-1]
+        for point in path_points:
+            if point[0] > 0.0 and np.hypot(point[0], point[1]) >= lookahead:
+                target = point
+                break
+        tx, ty = float(target[0]), float(target[1])
+        ld = max(1.0, float(np.hypot(tx, ty)))
+        alpha = float(np.arctan2(ty, tx))
+        steer_rad = float(np.arctan2(2.0 * wheelbase_m * np.sin(alpha), ld))
+        return float(np.clip(steer_rad / np.radians(max_steer_deg), -1.0, 1.0))

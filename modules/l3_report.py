@@ -58,14 +58,18 @@ def build_report(results, title="Mercedes-Benz DRIVE PILOT L3 Validation Report"
     tinh thần một artifact kỹ thuật, không phải log tùy hứng."""
     total = len(results)
     passed = sum(1 for r in results if r["pass"])
+    acceptance = {
+        "collisions": "== 0",
+        "reacted": "true (FSM rời NORMAL khi có vật cản trong làn)",
+        "note": "Chỉ số êm ái (max_decel/jerk) đã loại gai va chạm; xem impact_decel_spikes.",
+    }
+    if meta and meta.get("acceptance_criteria"):
+        acceptance = dict(meta["acceptance_criteria"])
+
     report = {
         "title": title,
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-        "acceptance_criteria": {
-            "collisions": "== 0",
-            "reacted": "true (FSM rời NORMAL khi có vật cản trong làn)",
-            "note": "Chỉ số êm ái (max_decel/jerk) đã loại gai va chạm; xem impact_decel_spikes.",
-        },
+        "acceptance_criteria": acceptance,
         "summary": {
             "scenarios": total,
             "passed": passed,
@@ -74,8 +78,31 @@ def build_report(results, title="Mercedes-Benz DRIVE PILOT L3 Validation Report"
         },
         "scenarios": results,
     }
+    core_names = set((meta or {}).get("core_scenarios", []))
+    core_results = [result for result in results if result.get("name") in core_names]
+    valid_results = [result for result in results if result.get("triggered", True)]
+    collision_free = all(result.get("collisions", 0) == 0 for result in valid_results)
+    core_ready = len(core_results) >= 18
+    catalog_ready = len(results) >= 45
+    report["acceptance_gate"] = {
+        "core": {
+            "required": "18/18",
+            "observed": f"{sum(bool(r.get('pass')) for r in core_results)}/{len(core_results)}",
+            "pass": (all(r.get("pass") for r in core_results) and core_ready)
+                    if core_ready else None,
+        },
+        "catalog": {
+            "required": ">=43/45",
+            "observed": f"{passed}/{total}",
+            "pass": (passed >= 43 and catalog_ready) if catalog_ready else None,
+        },
+        "no_collision_in_valid_runs": collision_free,
+        "status": ("PASS" if core_ready and catalog_ready and collision_free
+                   and all(r.get("pass") for r in core_results) and passed >= 43
+                   else "FAIL" if core_ready and catalog_ready else "NOT_EVALUATED"),
+    }
     if meta:
-        report["run"] = meta
+        report["run"] = {k: v for k, v in meta.items() if k != "acceptance_criteria"}
     return report
 
 

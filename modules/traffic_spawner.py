@@ -12,17 +12,27 @@ import carla
 
 
 class TrafficSpawner:
-    def __init__(self, world, traffic_manager, seed=None):
+    def __init__(self, world, traffic_manager, seed=None, on_spawn=None,
+                 strict=False):
         self.world = world
         self.tm = traffic_manager
         self.bpl = world.get_blueprint_library()
         self.rng = random.Random(seed)
+        self.on_spawn = on_spawn
+        self.strict = bool(strict)
         if seed is not None:
             try:
                 self.tm.set_random_device_seed(seed)
             except Exception:
-                pass
+                if self.strict:
+                    raise
         self.actors = []
+
+    def _own(self, actor):
+        """Register a spawned actor before any later configuration can fail."""
+        self.actors.append(actor)
+        if self.on_spawn is not None:
+            self.on_spawn(actor)
 
     def _vehicle_blueprints(self):
         """Chỉ lấy xe 4 bánh để giao thông ổn định, tránh xe đạp/2 bánh lỗi vật lý."""
@@ -56,9 +66,9 @@ class TrafficSpawner:
             npc = self.world.try_spawn_actor(bp, sp)
             if npc is None:
                 continue  # điểm bị chiếm -> bỏ qua
+            self._own(npc)
             npc.set_autopilot(True, self.tm.get_port())
             self._randomize(npc)
-            self.actors.append(npc)
             count += 1
 
         print(f"[Traffic] Đã sinh {count}/{num_vehicles} xe NPC (hành vi ngẫu nhiên).")
@@ -78,6 +88,8 @@ class TrafficSpawner:
             tm.ignore_signs_percentage(v, self.rng.randint(0, 20))
         except Exception as e:
             print(f"[Traffic] Cảnh báo: không áp được hành vi NGẪU nhiên: {e}")
+            if self.strict:
+                raise
 
     def spawn_hazard_ahead(self, ego_vehicle, distance_m=20.0):
         """Đặt một xe ĐỨNG YÊN cùng làn, cách ego ~distance_m về phía trước."""
@@ -96,14 +108,21 @@ class TrafficSpawner:
             print("[Traffic] Vị trí phía trước bị chiếm, không sinh được chướng ngại.")
             return None
 
+        self._own(hazard)
         hazard.apply_control(carla.VehicleControl(brake=1.0, hand_brake=True))
-        self.actors.append(hazard)
         print(f"[Traffic] ⚠ Đã đặt xe CHƯỚNG NGẠI đứng yên cách ego ~{distance_m:.0f}m.")
         return hazard
 
     def destroy(self, client):
         """Tiêu hủy toàn bộ NPC + chướng ngại đã sinh."""
-        if self.actors:
-            client.apply_batch([carla.command.DestroyActor(a) for a in self.actors])
-            print(f"[Traffic] Đã dọn {len(self.actors)} actor giao thông.")
+        actors = list(self.actors)
         self.actors = []
+        if not actors:
+            return
+        try:
+            client.apply_batch([carla.command.DestroyActor(a) for a in actors])
+            print(f"[Traffic] Đã dọn {len(actors)} actor giao thông.")
+        except Exception as exc:
+            # The server can be gone after a UE4 device-lost/crash.  Do not
+            # raise from finally; the primary runtime exception is more useful.
+            print(f"[Traffic] Cảnh báo không thể dọn actor sau mất kết nối: {exc}")

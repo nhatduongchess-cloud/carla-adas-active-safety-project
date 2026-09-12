@@ -32,17 +32,38 @@ class KpiRecorder:
         self.jerk_cap = jerk_cap_ms3
         self.t, self.speed, self.dist, self.ttc, self.state = [], [], [], [], []
         self.decel, self.jerk = [], []
+        self.pipeline_latency_ms = []
+        self.safety_latency_ms = []
+        self.perception_latency_ms = []
+        self.inference_age_ms = []
+        self.gpu_memory_mb = []
+        self.sensor_availability = {}
         self.collisions = 0
         self._prev_speed = None
         self._prev_decel = None
 
-    def add(self, t, speed_ms, distance_m=None, ttc_s=None, state="NORMAL", collisions=0):
+    def add(self, t, speed_ms, distance_m=None, ttc_s=None, state="NORMAL", collisions=0,
+            pipeline_latency_ms=None, safety_latency_ms=None,
+            perception_latency_ms=None, inference_age_ms=None,
+            gpu_memory_mb=None, sensor_availability=None):
         self.t.append(t)
         self.speed.append(float(speed_ms))
         self.dist.append(distance_m)
         self.ttc.append(ttc_s)
         self.state.append(state)
         self.collisions = max(self.collisions, int(collisions))
+        valid_latency = (pipeline_latency_ms is not None
+                         and math.isfinite(float(pipeline_latency_ms)))
+        self.pipeline_latency_ms.append(float(pipeline_latency_ms) if valid_latency else None)
+        for values, value in (
+                (self.safety_latency_ms, safety_latency_ms),
+                (self.perception_latency_ms, perception_latency_ms),
+                (self.inference_age_ms, inference_age_ms),
+                (self.gpu_memory_mb, gpu_memory_mb)):
+            valid = value is not None and math.isfinite(float(value))
+            values.append(float(value) if valid else None)
+        if sensor_availability:
+            self.sensor_availability = dict(sensor_availability)
 
         dec = (self._prev_speed - speed_ms) / self.dt if self._prev_speed is not None else 0.0
         jrk = (dec - self._prev_decel) / self.dt if self._prev_decel is not None else 0.0
@@ -67,6 +88,18 @@ class KpiRecorder:
         controlled_jerk = [abs(j) for j in self.jerk if abs(j) <= self.jerk_cap]
         impact_spikes = sum(1 for d in self.decel if d > self.decel_cap)
 
+        lat = sorted(x for x in self.pipeline_latency_ms if x is not None)
+        safety_lat = sorted(x for x in self.safety_latency_ms if x is not None)
+        perception_lat = sorted(x for x in self.perception_latency_ms if x is not None)
+        inference_age = sorted(x for x in self.inference_age_ms if x is not None)
+        gpu_memory = [x for x in self.gpu_memory_mb if x is not None]
+
+        def _pct(values, q):
+            if not values:
+                return None
+            idx = min(len(values) - 1, max(0, int(round(q * (len(values) - 1)))))
+            return round(values[idx], 2)
+
         return {
             "scenario": self.scenario,
             "duration_s": round(n * self.dt, 2),
@@ -77,6 +110,14 @@ class KpiRecorder:
             "max_decel_ms2": round(max(controlled_decel), 2) if controlled_decel else 0.0,
             "max_jerk_ms3": round(max(controlled_jerk), 2) if controlled_jerk else 0.0,
             "impact_decel_spikes": impact_spikes,   # số khung gai giảm tốc do va chạm
+            "pipeline_latency_p50_ms": _pct(lat, 0.50),
+            "pipeline_latency_p95_ms": _pct(lat, 0.95),
+            "pipeline_latency_p99_ms": _pct(lat, 0.99),
+            "safety_latency_p99_ms": _pct(safety_lat, 0.99),
+            "perception_latency_p95_ms": _pct(perception_lat, 0.95),
+            "inference_age_p95_ms": _pct(inference_age, 0.95),
+            "gpu_memory_peak_mb": round(max(gpu_memory), 2) if gpu_memory else None,
+            "sensor_availability": self.sensor_availability,
             "mean_speed_kmh": round(3.6 * sum(self.speed) / max(1, n), 1),
             "max_speed_kmh": round(3.6 * max(self.speed), 1) if self.speed else 0.0,
             "pct_time_state": pct,
@@ -86,10 +127,24 @@ class KpiRecorder:
     def write_csv(self, path):
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["t", "speed_ms", "distance_m", "ttc_s", "decel_ms2", "jerk_ms3", "state"])
+            w.writerow(["t", "speed_ms", "distance_m", "ttc_s", "decel_ms2",
+                        "jerk_ms3", "pipeline_latency_ms", "safety_latency_ms",
+                        "perception_latency_ms", "inference_age_ms", "gpu_memory_mb",
+                        "state"])
             for i in range(len(self.t)):
                 w.writerow([
                     round(self.t[i], 3), round(self.speed[i], 3),
                     self.dist[i], self.ttc[i],
-                    round(self.decel[i], 3), round(self.jerk[i], 3), self.state[i],
+                    round(self.decel[i], 3), round(self.jerk[i], 3),
+                    round(self.pipeline_latency_ms[i], 3)
+                    if self.pipeline_latency_ms[i] is not None else None,
+                    round(self.safety_latency_ms[i], 3)
+                    if self.safety_latency_ms[i] is not None else None,
+                    round(self.perception_latency_ms[i], 3)
+                    if self.perception_latency_ms[i] is not None else None,
+                    round(self.inference_age_ms[i], 3)
+                    if self.inference_age_ms[i] is not None else None,
+                    round(self.gpu_memory_mb[i], 3)
+                    if self.gpu_memory_mb[i] is not None else None,
+                    self.state[i],
                 ])

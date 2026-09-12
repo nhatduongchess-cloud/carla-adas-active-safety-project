@@ -105,7 +105,9 @@ class DashboardView:
         if dist is not None:
             ttc = threat.get('ttc_s')
             ttc_txt = f"{ttc:.1f}s" if ttc is not None else "--"
-            cv2.putText(canvas, f"{threat.get('label', 'obstacle')}  {dist:.1f} m",
+            source = str(threat.get('source') or 'unknown').upper()
+            cv2.putText(canvas,
+                        f"{threat.get('label', 'obstacle')} {dist:.1f}m [{source}]",
                         (x0, 272), cv2.FONT_HERSHEY_SIMPLEX, 0.62, C_WHITE, 2)
             cv2.putText(canvas, f"TTC: {ttc_txt}", (x0, 296),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, self._fsm_color(fsm), 2)
@@ -122,14 +124,42 @@ class DashboardView:
             ("COLLISIONS", str(collisions), C_RED if collisions > 0 else C_GREEN),
             ("FPS", f"{metrics.get('fps', 0.0):.1f}", C_WHITE),
         ]
+        latency = metrics.get('pipeline_latency_ms')
+        if latency is not None:
+            budget_ms = float(metrics.get('frame_budget_ms', 25.0))
+            age = metrics.get('inference_age_ms')
+            age_text = f" / age {age:.0f}" if age is not None else ""
+            rows.append(("LATENCY / INF AGE", f"{latency:.1f}{age_text} ms",
+                         C_RED if latency > budget_ms else C_GREEN))
+        frame_errors = int(metrics.get('sensor_frame_errors', 0))
+        if frame_errors:
+            rows.append(("SENSOR FRAME ERR", str(frame_errors), C_RED))
         if metrics.get('rl_target_kmh') is not None:
             rows.insert(2, (f"RL CRUISE (rho {metrics.get('density', 0.0):.1f})",
                             f"{metrics['rl_target_kmh']:.0f} km/h", C_ACCENT))
         lane_off = metrics.get('lane_offset_m')
         if lane_off is not None:
             departing = abs(lane_off) > 0.7   # lệch > 0.7 m -> cảnh báo chệch làn
-            rows.append(("LANE OFFSET", f"{lane_off:+.2f} m",
+            lane_source = str(metrics.get('lane_source', 'unknown')).upper()
+            lane_conf = float(metrics.get('lane_confidence', 0.0))
+            rows.append((f"LANE {lane_source} {lane_conf:.2f}", f"{lane_off:+.2f} m",
                          C_RED if departing else C_GREEN))
+        health = metrics.get('sensor_health') or {}
+        misses = health.get('consecutive_misses') or {}
+        if misses:
+            sensor_text = f"C{misses.get('camera', 0)} L{misses.get('lidar', 0)} R{misses.get('radar', 0)}"
+            sensor_bad = bool(health.get('range_redundancy_lost'))
+            rows.append(("SENSOR MISS STREAK", sensor_text,
+                         C_RED if sensor_bad else C_GREEN))
+        radar_availability = metrics.get('radar_availability')
+        if radar_availability is not None:
+            closing = metrics.get('radar_closing_ms')
+            closing_text = f" / {closing:.1f}m/s" if closing is not None else ""
+            validated = bool(metrics.get('radar_velocity_validated', False))
+            label = "RADAR AVAIL / CLOSING" if validated else "RADAR RANGE / VEL LOCK"
+            rows.append((label,
+                         f"{100.0 * radar_availability:.1f}%{closing_text}",
+                         C_GREEN if radar_availability >= 0.995 and validated else C_ORANGE))
         for lbl, val, col in rows:
             cv2.putText(canvas, lbl, (x0, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, C_GRAY, 1)
             cv2.putText(canvas, val, (x0 + 250, y), cv2.FONT_HERSHEY_SIMPLEX, 0.58, col, 2)

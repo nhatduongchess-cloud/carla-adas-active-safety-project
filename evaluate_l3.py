@@ -34,8 +34,13 @@ from weather_model import estimate_conditions
 from weather_config import load_weather_profiles, weather_kwargs
 from collision_sensor import CollisionSensor
 from kpi import KpiRecorder
-from ego_control import spawn_ego_safe
+from ego_control import EgoController, spawn_ego_safe
 from l3_report import assess_profile, write_report
+from sensor_sync import retrieve_exact_frame, SensorSyncStats, warmup_sensor_streams
+from sensor_setup import configure_camera_blueprint, configure_lidar_blueprint
+from ego_motion import EgoMotionEstimator
+from scene_semantics import summarize_traffic_controls
+from simulation_guard import force_traffic_lights_green, restore_traffic_lights
 
 
 def _rgb(img):
@@ -63,6 +68,7 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
     object_tracker, lidar_processor, sensor_fusion = shared
     actors = []
     camera = lidar = collision = None
+    light_snapshot = []
     dt = cfg.FIXED_DELTA
 
     # Thành phần CÓ TRẠNG THÁI -> tạo mới mỗi kịch bản.
@@ -72,8 +78,11 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
         critical_ttc_s=cfg.CRITICAL_TTC_S, warning_ttc_s=cfg.WARNING_TTC_S,
         min_closing_speed=cfg.MIN_CLOSING_SPEED, enable_evasion=cfg.ENABLE_EVASION,
         evade_lookahead_m=cfg.EVADE_LOOKAHEAD_M, lead_slow_ratio=cfg.LEAD_SLOW_RATIO,
-        follow_speed_diff=cfg.TM_FOLLOW_SPEED_DIFF)
+        follow_speed_diff=cfg.TM_FOLLOW_SPEED_DIFF,
+        vru_lateral_margin_m=cfg.VRU_LATERAL_MARGIN_M,
+        vru_prediction_horizon_s=cfg.VRU_PREDICTION_HORIZON_S)
     mot = MultiObjectTracker(dt=dt)
+    ego_motion_tracker = EgoMotionEstimator()
     odd_monitor = ODDMonitor()
     l3_sm = L3StateMachine(tor_window_s=cfg.TOR_WINDOW_S, mrm_decel_frac=cfg.MRM_DECEL_FRAC)
     kpi = KpiRecorder(dt=dt, scenario=name)
@@ -95,9 +104,11 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
     late_braking = 0
     prev_l3 = 'L3_ACTIVE'
     prev_brake = False
+    sync_stats = SensorSyncStats()
 
     try:
         world.set_weather(carla.WeatherParameters(**weather_kwargs(profile)))
+        light_snapshot = force_traffic_lights_green(world)
 
         ego, _ = spawn_ego_safe(world, bp_lib.find('vehicle.tesla.model3'))
         actors.append(ego)
@@ -106,9 +117,7 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
         tm.set_synchronous_mode(True)
         tm.distance_to_leading_vehicle(ego, cfg.TM_LEADING_DISTANCE_M)
         ego.set_autopilot(True, tm.get_port())
-        engaged = True
-        last_lc = -(10 ** 9)
-        cooldown = cfg.LANE_CHANGE_COOLDOWN_S / dt
+        controller = EgoController(ego, tm, cfg, world=world)
 
         # Xe chướng ngại đứng yên phía trước (để kiểm AEB dưới thời tiết).
         if not args.no_hazard:
@@ -121,18 +130,15 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
                     hz.apply_control(carla.VehicleControl(brake=1.0, hand_brake=True))
                     actors.append(hz)
 
-        cam_bp = bp_lib.find('sensor.camera.rgb')
-        cam_bp.set_attribute('image_size_x', str(cfg.CAM_WIDTH))
-        cam_bp.set_attribute('image_size_y', str(cfg.CAM_HEIGHT))
-        cam_bp.set_attribute('fov', str(cfg.CAM_FOV))
-        lid_bp = bp_lib.find('sensor.lidar.ray_cast')
-        lid_bp.set_attribute('range', '60')
-        lid_bp.set_attribute('rotation_frequency', str(cfg.FPS))
-        lid_bp.set_attribute('points_per_second', '200000')
-        lid_bp.set_attribute('channels', '32')
+        cam_bp = configure_camera_blueprint(bp_lib.find('sensor.camera.rgb'), cfg)
+        lid_bp = configure_lidar_blueprint(bp_lib.find('sensor.lidar.ray_cast'), cfg)
 
-        camera = world.spawn_actor(cam_bp, carla.Transform(carla.Location(x=cfg.CAM_X, z=cfg.CAM_Z)), attach_to=ego)
-        lidar = world.spawn_actor(lid_bp, carla.Transform(carla.Location(x=cfg.LIDAR_X, z=cfg.LIDAR_Z)), attach_to=ego)
+        camera = world.spawn_actor(cam_bp, carla.Transform(
+            carla.Location(x=cfg.CAM_X, y=cfg.CAM_Y, z=cfg.CAM_Z),
+            carla.Rotation(roll=cfg.CAM_ROLL, pitch=cfg.CAM_PITCH, yaw=cfg.CAM_YAW)), attach_to=ego)
+        lidar = world.spawn_actor(lid_bp, carla.Transform(
+            carla.Location(x=cfg.LIDAR_X, y=cfg.LIDAR_Y, z=cfg.LIDAR_Z),
+            carla.Rotation(roll=cfg.LIDAR_ROLL, pitch=cfg.LIDAR_PITCH, yaw=cfg.LIDAR_YAW)), attach_to=ego)
         actors.extend([camera, lidar])
         collision = CollisionSensor(world, ego, fps=cfg.FPS)
         actors.append(collision.sensor)
@@ -140,55 +146,53 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
         iq, lq = queue.Queue(), queue.Queue()
         camera.listen(iq.put)
         lidar.listen(lq.put)
+        warmup_sensor_streams(world, {"camera": iq, "lidar": lq})
 
         n_frames = int(args.seconds * cfg.FPS)
+        last_detections = []
         for frame in range(n_frames):
-            world.tick()
-            rgb = _rgb(iq.get(timeout=2.0))
-            pc = _lidar(lq.get(timeout=2.0))
+            w_frame = world.tick()
+            pipeline_t0 = time.perf_counter()
+            rgb = _rgb(retrieve_exact_frame(
+                iq, w_frame, sensor_name="camera", stats=sync_stats))
+            pc = _lidar(retrieve_exact_frame(
+                lq, w_frame, sensor_name="lidar", stats=sync_stats))
 
-            _, detections, _ = object_tracker.process(rgb, None, frame)
+            detect_frame = frame % cfg.DETECT_EVERY_N == 0
+            if detect_frame:
+                _, detections, _ = object_tracker.process(rgb, None, frame)
+                last_detections = detections
+            else:
+                detections = last_detections
             obstacles = lidar_processor.extract_obstacles(pc)
             fused = sensor_fusion.fuse(detections, obstacles)
+            traffic_control = summarize_traffic_controls(
+                fused, cfg.TRAFFIC_LIGHT_RANGE_M, cfg.STOP_SIGN_RANGE_M)
 
             vel = ego.get_velocity()
             speed = (vel.x ** 2 + vel.y ** 2 + vel.z ** 2) ** 0.5
-            tracks = mot.update(fused, dt)
-            decision = safety.update(speed, fused, obstacles, dt, tracks=tracks)
+            ego_motion = ego_motion_tracker.update(ego.get_transform())
+            tracks = mot.update(
+                fused if detect_frame else [], dt,
+                ego_motion=ego_motion, ego_speed_ms=speed)
+            ego_path, lane_context = controller.path_context()
+            decision = safety.update(
+                speed, fused, obstacles, dt, tracks=tracks,
+                path_points=ego_path, lane_context=lane_context)
             l3 = l3_sm.update(odd['state'], args.driver_takeover, speed, conditions['mu'], dt,
                               critical=odd['critical'])
 
-            # Áp lệnh (ưu tiên: L3 override > AEB > lái thường) — giống chinh.py.
-            if l3['override']:
-                if engaged:
-                    ego.set_autopilot(False); engaged = False
-                bcmd = 1.0 if l3['state'] == 'SAFE_STOP' else min(1.0, l3['target_decel_ms2'] / 6.0)
-                ego.apply_control(carla.VehicleControl(brake=bcmd, hand_brake=(l3['state'] == 'SAFE_STOP')))
-                _set_hazard(ego, True)
-            elif decision.action == "BRAKE":
-                _set_hazard(ego, l3['hazard'])
-                if engaged:
-                    ego.set_autopilot(False); engaged = False
-                ego.apply_control(carla.VehicleControl(brake=decision.brake))
-            else:
-                _set_hazard(ego, l3['hazard'])
-                if not engaged:
-                    ego.set_autopilot(True, tm.get_port()); engaged = True
-                drive_diff = 40.0 if odd['state'] == "DEGRADED" else cfg.TM_DEFAULT_SPEED_DIFF
-                if decision.action == "SLOW":
-                    tm.vehicle_percentage_speed_difference(ego, max(decision.slow_pct, drive_diff))
-                elif decision.action in ("LANE_CHANGE_LEFT", "LANE_CHANGE_RIGHT"):
-                    tm.vehicle_percentage_speed_difference(ego, drive_diff)
-                    if frame - last_lc > cooldown:
-                        tm.force_lane_change(ego, decision.action == "LANE_CHANGE_RIGHT")
-                        last_lc = frame
-                else:
-                    tm.vehicle_percentage_speed_difference(ego, drive_diff)
+            controller.apply(
+                decision, l3, odd['state'], frame,
+                target_speed_kmh=max(10.0, ego.get_speed_limit()),
+                traffic_control=traffic_control, respect_traffic_controls=False)
+            pipeline_latency_ms = (time.perf_counter() - pipeline_t0) * 1000.0
 
             # --- Ghi KPI + sự kiện ---
             threat = decision.threat or {}
             kpi.add(t=frame * dt, speed_ms=speed, distance_m=threat.get('distance_m'),
-                    ttc_s=threat.get('ttc_s'), state=decision.state, collisions=collision.count)
+                    ttc_s=threat.get('ttc_s'), state=decision.state,
+                    collisions=collision.count, pipeline_latency_ms=pipeline_latency_ms)
 
             if l3['state'] in ('MRM_EXECUTING', 'SAFE_STOP'):
                 mrm_triggered = True
@@ -206,6 +210,7 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
         summary = kpi.summary()
         result = assess_profile(name, expect_odd, odd['state'], summary,
                                 mrm_triggered, tor_count, false_diseng, late_braking)
+        result["sensor_sync"] = sync_stats.summary()
         os.makedirs("logs", exist_ok=True)
         kpi.write_csv(os.path.join("logs", f"kpi_{name}.csv"))
         verdict = "PASS" if result["pass"] else "FAIL"
@@ -214,6 +219,7 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
         return result
 
     finally:
+        restore_traffic_lights(light_snapshot)
         for s in (camera, lidar):
             if s is not None and s.is_alive:
                 s.stop()
@@ -250,12 +256,20 @@ def main():
         EnsembleVehicleTracker(device=cfg.YOLO_DEVICE, use_ensemble=cfg.USE_ENSEMBLE,
                                model_a=cfg.YOLO_MODEL_A, model_b=cfg.YOLO_MODEL_B,
                                imgsz=cfg.YOLO_IMGSZ, half=cfg.YOLO_HALF,
-                               use_optimized=cfg.YOLO_USE_OPTIMIZED),
+                               use_optimized=cfg.YOLO_USE_OPTIMIZED,
+                               target_classes=cfg.DETECTED_CLASSES,
+                               class_names=cfg.CLASS_NAMES,
+                               conf_threshold=cfg.CONF_THRES,
+                               nms_threshold=cfg.IOU_THRES),
         LidarProcessor(eps=0.6, min_samples=5, max_points=cfg.LIDAR_MAX_POINTS),
         SensorFusion(width=cfg.CAM_WIDTH, height=cfg.CAM_HEIGHT, fov=cfg.CAM_FOV,
                      lidar_y_sign=cfg.LIDAR_Y_SIGN, real_heights_m=cfg.REAL_HEIGHTS_M,
                      default_height_m=cfg.DEFAULT_HEIGHT_M,
-                     depth_min_m=cfg.DEPTH_MIN_M, depth_max_m=cfg.DEPTH_MAX_M),
+                     depth_min_m=cfg.DEPTH_MIN_M, depth_max_m=cfg.DEPTH_MAX_M,
+                     camera_pose=(cfg.CAM_X, cfg.CAM_Y, cfg.CAM_Z,
+                                  cfg.CAM_ROLL, cfg.CAM_PITCH, cfg.CAM_YAW),
+                     lidar_pose=(cfg.LIDAR_X, cfg.LIDAR_Y, cfg.LIDAR_Z,
+                                 cfg.LIDAR_ROLL, cfg.LIDAR_PITCH, cfg.LIDAR_YAW)),
     )
 
     original = world.get_settings()
@@ -275,6 +289,10 @@ def main():
                 results.append(assess_profile(name, profiles[name].get('expect_odd', '?'),
                                               'ERROR', {"collisions": -1}, False, 0, 0, 0))
     finally:
+        try:
+            client.get_trafficmanager(cfg.TM_PORT).set_synchronous_mode(False)
+        except Exception:
+            pass
         world.apply_settings(original)
 
     report = write_report(cfg.L3_REPORT_PATH, results)

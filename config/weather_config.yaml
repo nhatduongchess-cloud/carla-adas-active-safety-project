@@ -17,7 +17,10 @@ profiles:
     wind_intensity: 10.0
 
   light_rain:
-    expect_odd: DEGRADED
+    # With the engineering model below this remains inside the normal ODD:
+    # visibility ~= 155.8 m, mu = 0.70 and SNR = 0.825.  Wet/heavy rain is
+    # covered separately by the DEGRADED profile.
+    expect_odd: NORMAL
     cloudiness: 60.0
     precipitation: 30.0
     precipitation_deposits: 30.0

@@ -25,12 +25,14 @@ chinh.py mới là nơi dịch quyết định thành lệnh CARLA/Traffic Manag
 # isort: skip_file
 import math
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 
 try:
     from friction import stopping_distance
+    from road_geometry import project_to_safety_path, straight_path
 except ImportError:  # khi import kiểu package (modules.active_safety)
     from modules.friction import stopping_distance
+    from modules.road_geometry import project_to_safety_path, straight_path
 
 
 @dataclass
@@ -58,6 +60,8 @@ class ActiveSafetySystem:
         evade_lookahead_m: float = 25.0,
         lead_slow_ratio: float = 0.55,
         follow_speed_diff: float = 60.0,
+        vru_lateral_margin_m: float = 0.8,
+        vru_prediction_horizon_s: float = 4.0,
     ) -> None:
         self.lane_half = lane_half_width_m
         self.min_cluster_points = min_cluster_points
@@ -70,6 +74,12 @@ class ActiveSafetySystem:
         self.evade_lookahead = evade_lookahead_m
         self.lead_slow_ratio = lead_slow_ratio
         self.follow_speed_diff = follow_speed_diff
+        self.lane_change_front_gap = 18.0
+        self.lane_change_rear_gap = 12.0
+        self.lane_change_prediction_s = 3.0
+        self.cut_in_prediction_s = 3.0
+        self.vru_lateral_margin = float(vru_lateral_margin_m)
+        self.vru_prediction_s = float(vru_prediction_horizon_s)
 
         # Điều kiện mặt đường/thời tiết (ODD monitor cập nhật động).
         self.mu = 0.8               # hệ số ma sát (dry mặc định)
@@ -92,6 +102,7 @@ class ActiveSafetySystem:
         self._brake_latched = False
         self._evade_dir = None          # 'LANE_CHANGE_LEFT' | 'LANE_CHANGE_RIGHT'
         self._evade_frames_left = 0
+        self._evade_origin_lane_id = None
         # Giữ phanh đã chốt qua vài khung MẤT DẤU (vật thấp/thưa như cọc công
         # trường cho cụm LiDAR chớp tắt) -> không nhả phanh rồi lao tới.
         self.lost_frames_tol = 4
@@ -105,55 +116,136 @@ class ActiveSafetySystem:
         self.gap_multiplier = gap_multiplier
 
     # --------------------------------------------------------------------- #
-    def _scan_corridors(self, lidar_obstacles: List[Dict[str, Any]]):
+    def _scan_corridors(self, lidar_obstacles: List[Dict[str, Any]], path_points=None):
         """Quét cụm LiDAR: vật gần nhất trong làn + làn trái/phải có trống không.
 
         Khung LiDAR/xe: x tiến, +y phải, -y trái.
         """
         nearest = math.inf
         nearest_obs: Optional[Dict[str, Any]] = None
-        left_clear = True
-        right_clear = True
+        gaps = {
+            "left": {"front": math.inf, "rear": math.inf},
+            "right": {"front": math.inf, "rear": math.inf},
+        }
+        path = path_points or straight_path(self.evade_lookahead + 15.0)
 
         for obs in lidar_obstacles:
             x, y, _z = obs["centroid"]
-            if obs.get("point_count", 0) < self.min_cluster_points:
+            reliable = obs.get("point_count", 0) >= self.min_cluster_points
+            reliable = reliable or (
+                obs.get("safety_critical", False) and obs.get("point_count", 0) >= 2)
+            if not reliable:
                 continue
-            if x <= 0.0:
-                continue
+            along, lateral, _distance_to_path = project_to_safety_path(x, y, path)
 
-            if abs(y) < self.lane_half and x < nearest:
-                nearest = x
+            if x > 0.0 and abs(lateral) < self.lane_half and along < nearest:
+                nearest = along
                 nearest_obs = obs
 
-            if 0.0 < x < self.evade_lookahead:
-                # Làn phải kế bên: y in [lane_half, 3*lane_half]
-                if self.lane_half <= y < 3.0 * self.lane_half:
-                    right_clear = False
-                # Làn trái kế bên: y in [-3*lane_half, -lane_half]
-                elif -3.0 * self.lane_half < y <= -self.lane_half:
-                    left_clear = False
+            side = None
+            if self.lane_half <= lateral < 3.0 * self.lane_half:
+                side = "right"
+            elif -3.0 * self.lane_half < lateral <= -self.lane_half:
+                side = "left"
+            if side is not None:
+                if x >= 0.0:
+                    gaps[side]["front"] = min(gaps[side]["front"], along)
+                else:
+                    gaps[side]["rear"] = min(gaps[side]["rear"], abs(x))
 
-        return nearest, nearest_obs, left_clear, right_clear
+        return nearest, nearest_obs, gaps
 
-    def _predictive(self, tracks):
+    @staticmethod
+    def _track_relative_velocity(track, ego_speed_ms):
+        vx, vy = track.vel
+        if getattr(track, "ego_compensated", False):
+            vx -= ego_speed_ms
+        return vx, vy
+
+    def _predictive(self, tracks, path_points=None, ego_speed_ms=0.0):
         """Từ tracker: vật gần nhất trong làn + TTC theo vận tốc TƯƠNG ĐỐI ước lượng.
 
         tracks: đối tượng có .pos -> (x, y) và .vel -> (vx, vy) trong khung ego.
         """
         nearest = math.inf
         ttc = math.inf
+        path = path_points or straight_path(self.evade_lookahead + 15.0)
         for tr in tracks:
             x, y = tr.pos
-            vx, _vy = tr.vel
-            if x <= 0.0 or abs(y) >= self.lane_half:
+            vx, _vy = self._track_relative_velocity(tr, ego_speed_ms)
+            if x <= 0.0:
                 continue
-            nearest = min(nearest, x)
-            closing = -vx  # vx < 0 nghĩa là đang tiến lại gần ego
-            # Bỏ vận tốc phi lý (nhiễu track lúc mới khởi tạo) -> tránh phanh oan làm kẹt xe.
-            if self.min_closing < closing < 40.0:
-                ttc = min(ttc, x / closing)
+            along, lateral, _ = project_to_safety_path(x, y, path)
+            is_vru = str(getattr(tr, "class_name", "")).lower() in {
+                "person", "bicycle", "motorcycle"}
+            corridor_half = self.lane_half + (self.vru_lateral_margin if is_vru else 0.0)
+            if abs(lateral) < corridor_half:
+                nearest = min(nearest, along)
+                closing = -vx  # vx < 0 nghĩa là đang tiến lại gần ego
+                if self.min_closing < closing < 40.0:
+                    ttc = min(ttc, along / closing)
+                continue
+
+            # Track đang ở làn bên nhưng quỹ đạo ngắn hạn cắt vào swept path.
+            step = 0.25
+            t = step
+            horizon = self.vru_prediction_s if is_vru else self.cut_in_prediction_s
+            while t <= horizon + 1e-9:
+                px, py = x + vx * t, y + _vy * t
+                p_along, p_lat, _ = project_to_safety_path(px, py, path)
+                if px > 0.0 and p_along > 0.0 and abs(p_lat) < corridor_half:
+                    nearest = min(nearest, p_along)
+                    ttc = min(ttc, t)
+                    break
+                t += step
         return nearest, ttc
+
+    def _radar_threat(self, radar_targets, path_points=None):
+        """Closest conservative radar range/TTC in the current swept path."""
+        nearest, ttc, closing_at_threat = math.inf, math.inf, 0.0
+        path = path_points or straight_path(self.evade_lookahead + 15.0)
+        for target in radar_targets or []:
+            x = float(target.get("distance_m", target.get("x_m", math.inf)))
+            y = float(target.get("lateral_m", target.get("y_m", 0.0)))
+            if not math.isfinite(x) or x <= 0.0:
+                continue
+            along, lateral, _ = project_to_safety_path(x, y, path)
+            if along <= 0.0 or abs(lateral) >= self.lane_half:
+                continue
+            target_closing = max(0.0, float(target.get("closing_speed_ms", 0.0)))
+            target_ttc = (along / target_closing
+                          if target_closing > self.min_closing else math.inf)
+            if along < nearest:
+                nearest = along
+                closing_at_threat = target_closing
+            ttc = min(ttc, target_ttc)
+        return nearest, ttc, closing_at_threat
+
+    def _lane_change_clear(self, side, gaps, tracks, path_points, lane_context,
+                           ego_speed_ms=0.0):
+        ctx = lane_context or {}
+        if not ctx.get(f"{side}_exists", True):
+            return False
+        if not ctx.get(f"{side}_change_allowed", True):
+            return False
+        if gaps[side]["front"] < self.lane_change_front_gap:
+            return False
+        if gaps[side]["rear"] < self.lane_change_rear_gap:
+            return False
+
+        path = path_points or straight_path(self.evade_lookahead + 15.0)
+        for tr in tracks or []:
+            x, y = tr.pos
+            vx, vy = self._track_relative_velocity(tr, ego_speed_ms)
+            for t in (0.0, 1.0, 2.0, self.lane_change_prediction_s):
+                px, py = x + vx * t, y + vy * t
+                along, lateral, _ = project_to_safety_path(px, py, path)
+                in_side = (self.lane_half <= lateral < 3.0 * self.lane_half) \
+                    if side == "right" else (-3.0 * self.lane_half < lateral <= -self.lane_half)
+                if in_side and (-self.lane_change_rear_gap < px
+                                and along < self.lane_change_front_gap):
+                    return False
+        return True
 
     @staticmethod
     def _label_for(nearest: float, fused_detections: List[Dict[str, Any]]) -> str:
@@ -176,8 +268,15 @@ class ActiveSafetySystem:
         lidar_obstacles: List[Dict[str, Any]],
         dt: float,
         tracks=None,
+        path_points=None,
+        lane_context=None,
+        radar_targets=None,
     ) -> SafetyDecision:
-        corridor_nearest, _obs, left_clear, right_clear = self._scan_corridors(lidar_obstacles)
+        corridor_nearest, _obs, gaps = self._scan_corridors(lidar_obstacles, path_points)
+        left_clear = self._lane_change_clear(
+            "left", gaps, tracks, path_points, lane_context, ego_speed_ms)
+        right_clear = self._lane_change_clear(
+            "right", gaps, tracks, path_points, lane_context, ego_speed_ms)
 
         # Tốc độ tiến lại gần (closing speed) từ lịch sử khoảng cách hành lang LiDAR.
         closing = 0.0
@@ -192,10 +291,29 @@ class ActiveSafetySystem:
         # Dự đoán từ tracker (tùy chọn): TTC theo vận tốc từng vật -> phanh SỚM hơn.
         pred_nearest, pred_ttc = math.inf, math.inf
         if tracks:
-            pred_nearest, pred_ttc = self._predictive(tracks)
+            pred_nearest, pred_ttc = self._predictive(
+                tracks, path_points, ego_speed_ms)
 
-        nearest = min(corridor_nearest, pred_nearest)
-        ttc = min(corridor_ttc, pred_ttc)
+        radar_nearest, radar_ttc, radar_closing = self._radar_threat(
+            radar_targets, path_points)
+
+        # Never average away danger: the most conservative valid geometry/TTC
+        # from LiDAR, tracker, or radar wins.
+        distance_candidates = {
+            "lidar": corridor_nearest,
+            "tracker": pred_nearest,
+            "radar": radar_nearest,
+        }
+        finite_distances = {
+            source: distance for source, distance in distance_candidates.items()
+            if math.isfinite(distance)
+        }
+        nearest_source = (min(finite_distances, key=finite_distances.get)
+                          if finite_distances else None)
+        nearest = (finite_distances[nearest_source]
+                   if nearest_source is not None else math.inf)
+        ttc = min(corridor_ttc, pred_ttc, radar_ttc)
+        conservative_closing = max(closing, radar_closing)
 
         decision = SafetyDecision()
 
@@ -217,6 +335,7 @@ class ActiveSafetySystem:
             self._brake_latched = False
             self._evade_dir = None
             self._evade_frames_left = 0
+            self._evade_origin_lane_id = None
             self._lost_frames = 0
             return decision  # NORMAL / DRIVE
         self._lost_frames = 0
@@ -230,7 +349,7 @@ class ActiveSafetySystem:
         # Ước lượng TỐC ĐỘ VẬT CẢN (m/s): ego trừ tốc độ tiến lại gần. Vật đứng yên ->
         # closing ≈ ego -> obstacle_speed ≈ 0. Không phụ thuộc ngưỡng tốc độ ego, nên
         # xe vẫn xử lý dứt khoát vật tĩnh KỂ CẢ khi đang bò chậm (sửa lỗi "bò vào vật").
-        obstacle_speed = max(0.0, ego_speed_ms - max(closing, 0.0))
+        obstacle_speed = max(0.0, ego_speed_ms - max(conservative_closing, 0.0))
         lead_is_slow = obstacle_speed < self.follow_min_lead_speed
         # Chốt an toàn độc lập với ước lượng closing (dễ nhiễu ở tốc độ thấp): ego bò
         # chậm + vật còn trong vùng cảnh báo -> BẮT BUỘC hành động (dừng/né).
@@ -239,8 +358,16 @@ class ActiveSafetySystem:
 
         decision.threat = {
             "distance_m": round(nearest, 2),
+            "source": nearest_source,
             "ttc_s": round(ttc, 2) if math.isfinite(ttc) else None,
-            "closing_ms": round(closing, 2),
+            "closing_ms": round(conservative_closing, 2),
+            "lidar_distance_m": round(corridor_nearest, 2)
+                                if math.isfinite(corridor_nearest) else None,
+            "tracker_distance_m": round(pred_nearest, 2)
+                                  if math.isfinite(pred_nearest) else None,
+            "radar_closing_ms": round(radar_closing, 2) if radar_targets else None,
+            "radar_distance_m": round(radar_nearest, 2)
+                                if math.isfinite(radar_nearest) else None,
             "obstacle_speed_ms": round(obstacle_speed, 2),
             "label": self._label_for(nearest, fused_detections),
         }
@@ -264,22 +391,32 @@ class ActiveSafetySystem:
             self._brake_latched = True
             self._evade_dir = None
             self._evade_frames_left = 0
+            self._evade_origin_lane_id = None
             _emit_brake("EMERGENCY_BRAKE", 1.0)
             return decision
 
         # 3) Đang trong pha NÉ đã cam kết -> giữ hướng, trừ khi phải hủy để phanh.
         if self._evade_frames_left > 0 and self._evade_dir is not None:
+            target_side = "right" if self._evade_dir == "LANE_CHANGE_RIGHT" else "left"
+            current_lane_id = (lane_context or {}).get("current_lane_id")
+            lane_change_complete = (
+                self._evade_origin_lane_id is not None
+                and current_lane_id is not None
+                and current_lane_id != self._evade_origin_lane_id)
+            target_still_clear = right_clear if target_side == "right" else left_clear
             self._evade_frames_left -= 1
             getting_dangerous = (ttc < self.critical_ttc * 1.3) or \
                                 (nearest < self.min_safe_dist * 1.3)
-            if not warning:
+            if lane_change_complete or not warning:
                 self._evade_dir = None
                 self._evade_frames_left = 0
-            elif getting_dangerous:
+                self._evade_origin_lane_id = None
+            elif getting_dangerous or not target_still_clear:
                 # Chuyển làn không kịp/không ăn -> CHỐT PHANH ngay.
                 self._brake_latched = True
                 self._evade_dir = None
                 self._evade_frames_left = 0
+                self._evade_origin_lane_id = None
                 _emit_brake("EMERGENCY_BRAKE", 1.0)
                 return decision
             else:
@@ -297,6 +434,7 @@ class ActiveSafetySystem:
             if can_evade:
                 self._evade_dir = "LANE_CHANGE_RIGHT" if right_clear else "LANE_CHANGE_LEFT"
                 self._evade_frames_left = max(1, int(self.evade_commit_s / max(dt, 1e-3)))
+                self._evade_origin_lane_id = (lane_context or {}).get("current_lane_id")
                 decision.state = "EVADE_RIGHT" if right_clear else "EVADE_LEFT"
                 decision.action = self._evade_dir
                 decision.collision_risk = True

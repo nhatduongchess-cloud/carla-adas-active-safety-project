@@ -98,6 +98,6 @@ class DQNAgent:
                     "obs_dim": self.obs_dim, "n_actions": self.n_actions}, path)
 
     def load(self, path):
-        ckpt = torch.load(path, map_location=self.device)
+        ckpt = torch.load(path, map_location=self.device, weights_only=True)
         self.q.load_state_dict(ckpt["model"])
         self.update_target()
