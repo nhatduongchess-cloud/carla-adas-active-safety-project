@@ -1,7 +1,11 @@
-name: self-test
+﻿name: CI
 
-# Runs the CARLA-free geometry + safety-FSM self-test on every push / PR.
-# selftest.py depends only on NumPy, so no simulator or GPU is required.
+# Three CARLA-free gates on every push / PR:
+#   lint      - ruff correctness gate (pyflakes F + syntax E9 + bugbear B)
+#   typecheck - mypy on the safety-evidence core
+#   selftest  - selftest.py geometry + safety-FSM checks (179)
+# The full unit-test suite (test_*.py) imports the CARLA client / PyTorch and
+# runs in the local CARLA environment, not here.
 
 on:
   push:
@@ -10,18 +14,37 @@ on:
     branches: [main]
 
 jobs:
-  selftest:
+  lint:
+    name: Ruff (correctness lint)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: python -m pip install --upgrade pip ruff
+      - run: ruff check .
 
-      - name: Install minimal dependencies
-        run: python -m pip install --upgrade pip numpy
+  typecheck:
+    name: Mypy (safety-evidence core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip mypy numpy
+      - run: mypy
 
-      - name: Run self-test (106 checks)
+  selftest:
+    name: Self-test (179 CARLA-free checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install self-test dependencies
+        run: python -m pip install --upgrade pip numpy pyyaml opencv-python-headless scikit-learn pillow
+      - name: Run self-test
         run: python selftest.py
