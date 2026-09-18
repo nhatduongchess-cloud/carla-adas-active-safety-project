@@ -29,7 +29,7 @@
 ## Table of contents
 - [Highlights](#highlights)
 - [Scope & status](#scope--status)
-- [System architecture](#system-architecture)
+- [System architecture](#system-architecture) · [full architecture doc](docs/ARCHITECTURE.md)
 - [Active-safety state machine](#active-safety-state-machine)
 - [Features](#features)
 - [Results](#results)
@@ -101,6 +101,8 @@ flowchart LR
 ```
 
 **Design in one line:** the custom planner/controller drives by default; AEB and L3 MRM hold the highest-priority override, so safety always wins over comfort and over the learned cruise policy.
+
+> 📐 **[Full system architecture → `docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** — architectural drivers, execution model, per-tick sequence, the complete AEB state machine, command arbitration, the three containments on the RL policy, the freshness contract, verified teardown, the verification tiers, and an honest list of known architectural gaps. Every constant in it is referenced to the line of code it came from.
 
 ## Active-safety state machine
 
@@ -199,7 +201,7 @@ Self-Driving-Perception/
 ├── collect_carla_dataset.py # Resumable CARLA capture (schema4) for the data-story sample
 ├── validate_dataset.py      # Dataset integrity / decode / label validation
 ├── modules/                 # Domain modules (sensors, perception, radar, fusion, safety, control, L3, RL)
-└── docs/                    # Architecture, scope plan, failure analysis, acceptance notes
+└── docs/                    # ARCHITECTURE.md, failure analysis, runbook, acceptance notes
 ```
 
 > **Not tracked in git** (see `.gitignore`): virtual environments, datasets, downloadable weights, runtime logs, telemetry CSVs, and vendored upstream repos (`scenario_runner/`, `ros-bridge/`, `rllib-integration/`, `transfuser/`).
