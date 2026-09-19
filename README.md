@@ -40,6 +40,7 @@
 - [Testing](#testing)
 - [Engineering notes & design decisions](#engineering-notes--design-decisions)
 - [Roadmap / future work](#roadmap--future-work)
+- [How this was built](#how-this-was-built)
 - [Acknowledgments](#acknowledgments)
 - [License](#license)
 
@@ -374,6 +375,37 @@ GitHub Actions runs four gates on every push: ruff, mypy, `selftest.py`, and the
 - [ ] Runtime performance qualification (unique-object throughput, end-to-end latency) on GPU.
 - [ ] Native-engine stability investigation for the heavy capture path (B01).
 - [ ] TensorRT/ONNX inference path with accuracy guardrails.
+
+## How this was built
+
+The project is mine — the problem, the scope, and the decisions about what to
+build and what to leave out. I wrote it with AI assistance (Claude), which did
+a large share of the implementation, debugging and documentation. The commit
+history reflects that honestly: AI-assisted commits carry a co-author trailer.
+
+What that leaves me responsible for, and what I can explain in detail:
+
+- **The scope decisions.** The sensor set is deliberately capped. The
+  development GPU is an 8 GB RTX 4070 Laptop, and adding further camera or
+  LiDAR streams on top of the detector exhausts VRAM before it buys any safety
+  margin. Additional modalities are future work, not an oversight.
+- **Reading my own code critically.** Two of the defects fixed here I found by
+  reading the source rather than by being told: a state-machine branch in
+  `modules/planner.py` that could never be reached, and a missing minimum
+  cruise floor in `modules/rl_speed_controller.py`. Both are recorded in
+  [`docs/ARCHITECTURE.md` §12](docs/ARCHITECTURE.md#12-known-architectural-gaps).
+- **Judging outside input.** An external review of this codebase proposed a set
+  of changes. I evaluated them and applied the ones that held up, rather than
+  applying the list.
+- **The verification.** Every live number in this repository was produced on my
+  machine against a running CARLA server. When a stricter harness dropped the
+  catalog suite from 45/45 to 43/45, I published the lower number and the
+  reason — see [`docs/benchmarks/`](docs/benchmarks/README.md) — instead of the
+  flattering one.
+
+Known open gaps are listed in
+[`docs/ARCHITECTURE.md` §12](docs/ARCHITECTURE.md#12-known-architectural-gaps)
+and are not hidden.
 
 ## Acknowledgments
 
