@@ -2,7 +2,7 @@
 
 # 🚗 CARLA ADAS — Perception → Fusion → Committed Active Safety
 
-**A modular autonomous-driving perception and active-safety stack in the [CARLA](https://carla.org/) simulator, built around one production-ADAS principle: a metric, calibration-free braking corridor that no learned component is allowed to override. Perception labels the scene; geometry decides when to brake.**
+**A modular autonomous-driving perception and active-safety stack in the [CARLA](https://carla.org/) simulator, built around one production-ADAS principle: the emergency brake is a geometric check of the planned corridor against metric LiDAR and radar, never a detector output — so no learned component can suppress it. Perception labels the scene; geometry decides when to brake.**
 
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![CARLA](https://img.shields.io/badge/CARLA-0.9.14%20%7C%200.9.15%20%7C%200.9.16-00A0E4)](https://carla.org/)
