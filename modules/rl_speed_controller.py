@@ -47,14 +47,19 @@ class RLSpeedController:
         return 30.0
 
     @staticmethod
-    def _safety_cap_kmh(nearest_dist_m, ttc_s,
-                        buffer_m=5.0, a_comfort=2.5, time_gap_s=1.8):
+    def safety_cap_kmh(nearest_dist_m, ttc_s,
+                       buffer_m=5.0, a_comfort=2.5, time_gap_s=1.8):
         """TRẦN TỐC ĐỘ AN TOÀN (km/h) cho tốc độ tuần hành.
 
         RL/heuristic chỉ tối ưu THÔNG LƯỢNG; trần này bảo đảm tốc độ luôn nằm trong
         bao an toàn: (1) dừng ÊM được trong khoảng trống phía trước, và (2) giữ
         time-gap tối thiểu tới vật gần nhất. Đây là mức tuần hành — lớp AEB/MRM vẫn
         ghi đè phanh khẩn cấp khi cần.
+
+        PUBLIC: chinh.py gọi lại hàm này MỖI KHUNG HÌNH sau khi làm mượt (EMA),
+        vì khoảng trống phía trước thay đổi từng khung trong khi policy chỉ chạy
+        mỗi RL_SPEED_EVERY_N khung. Trần an toàn phải là TIẾNG NÓI CUỐI CÙNG và
+        phải được tính trên khoảng cách HIỆN TẠI.
         """
         if nearest_dist_m is None or nearest_dist_m >= 900.0:
             return float("inf")
@@ -66,8 +71,23 @@ class RLSpeedController:
             cap_ms *= max(0.3, ttc_s / 6.0)
         return cap_ms * 3.6
 
-    def desired_speed_kmh(self, ego_speed_ms, density, nearest_dist_m, ttc_s):
-        """Trả tốc độ mong muốn (km/h) theo tình huống hiện tại (đã kẹp trần an toàn)."""
+    def desired_speed_kmh(self, ego_speed_ms, density, nearest_dist_m, ttc_s,
+                          min_cruise_kmh=0.0):
+        """Trả tốc độ mong muốn (km/h), LUÔN nằm dưới trần an toàn.
+
+        THỨ TỰ SÀN → TRẦN LÀ QUAN TRỌNG, KHÔNG PHẢI TÙY Ý.
+
+        `min_cruise_kmh` là sàn chống "xe đứng yên" khi policy trả ~0 trên đường
+        thoáng. Trước đây sàn này được áp ở chinh.py SAU khi trần an toàn đã kẹp,
+        nên một sàn 18 km/h có thể NÂNG NGƯỢC một mục tiêu vừa bị hạ có chủ đích
+        vì phía trước có vật cản gần. Sàn phải nằm TRONG trần:
+
+            target = min( max(raw, san), tran )
+
+        Vật cản gần -> tran < san -> kết quả là tran. Đường thoáng -> tran = vô
+        cực -> kết quả là max(raw, san). Sàn chỉ còn tác dụng ở đúng tình huống
+        nó được sinh ra để xử lý.
+        """
         if self.policy is None:
             target = self._heuristic_kmh(density)
         else:
@@ -77,7 +97,8 @@ class RLSpeedController:
             with self._torch.no_grad():
                 a = int(self.policy(t).argmax(1).item())
             target = float(self.actions_kmh[a])
-        # Kẹp trong bao an toàn theo khoảng trống + time-gap trước mặt.
-        target = min(target, self._safety_cap_kmh(nearest_dist_m, ttc_s))
+        # Sàn trước, rồi trần — trần luôn có tiếng nói cuối cùng.
+        target = max(target, max(0.0, float(min_cruise_kmh)))
+        target = min(target, self.safety_cap_kmh(nearest_dist_m, ttc_s))
         self.prev_target_ms = target / 3.6
         return target

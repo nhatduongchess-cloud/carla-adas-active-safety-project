@@ -13,7 +13,7 @@ Purpose: a one-shot, reproducible recipe for the portfolio demo video and the ho
 Set-Location 'C:\Users\Admin\OneDrive\Desktop\Carla Simulator\Self-Driving-Perception'
 
 # Sanity: safety/geometry logic green, no simulator needed
-.\.venvCarLa\Scripts\python.exe selftest.py            # expect 179 PASS / 0 FAIL
+.\.venvCarLa\Scripts\python.exe selftest.py            # expect 190 PASS / 0 FAIL
 
 # Start the CARLA server (Low / 640x360 visible window)
 .\launch_carla.bat

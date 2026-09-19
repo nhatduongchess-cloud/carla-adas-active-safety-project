@@ -3,7 +3,7 @@
 # Three CARLA-free gates on every push / PR:
 #   lint      - ruff correctness gate (pyflakes F + syntax E9 + bugbear B)
 #   typecheck - mypy on the safety-evidence core
-#   selftest  - selftest.py geometry + safety-FSM checks (179)
+#   selftest  - selftest.py geometry + safety-FSM checks (190)
 # The full unit-test suite (test_*.py) imports the CARLA client / PyTorch and
 # runs in the local CARLA environment, not here.
 
@@ -37,7 +37,7 @@ jobs:
       - run: mypy
 
   selftest:
-    name: Self-test (179 CARLA-free checks)
+    name: Self-test (190 CARLA-free checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

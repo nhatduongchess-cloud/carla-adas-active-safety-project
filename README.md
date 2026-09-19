@@ -9,7 +9,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![YOLO](https://img.shields.io/badge/Ultralytics-YOLOv8%2Fv10-00B5B8)](https://github.com/ultralytics/ultralytics)
 [![CI](https://github.com/nhatduongchess-cloud/carla-adas-active-safety-project/actions/workflows/selftest.yml/badge.svg)](https://github.com/nhatduongchess-cloud/carla-adas-active-safety-project/actions/workflows/selftest.yml)
-[![Self-test](https://img.shields.io/badge/self--test-179%20checks-brightgreen)](selftest.py)
+[![Self-test](https://img.shields.io/badge/self--test-190%20checks-brightgreen)](selftest.py)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
@@ -53,7 +53,7 @@
 - **Audited learned lane with deterministic fallback** — UFLDv2 (Tusimple, ResNet18) via a hash-pinned, weights-only local backend, gated by confidence/width/jump checks with junction priority and a CARLA-map fallback.
 - **L3-style ODD / MRM layer** — an ODD monitor (`NORMAL / DEGRADED / VIOLATION`) and a `TOR → MRM → SAFE_STOP` state machine, with a friction/stopping-distance model and rain-aware fusion weighting.
 - **Safety-capped RL cruise** — a lightweight DQN sets desired speed from traffic density but can *only* propose cruise speed; AEB/MRM always override.
-- **Reproducible, CARLA-free verification** — `selftest.py` exercises the geometry + safety math in **179 checks** with no simulator running, so the safety logic is testable in CI.
+- **Reproducible, CARLA-free verification** — `selftest.py` exercises the geometry + safety math in **190 checks** with no simulator running, so the safety logic is testable in CI.
 - **Fail-closed runtime** — the pipeline reports success only after teardown is *verified* (owned actors removed, world settings restored, async progress confirmed); a failed or timed-out cleanup fails the run and its exit code.
 
 ## Scope & status
@@ -63,7 +63,7 @@ This is a **portfolio project**, scoped to demonstrate ADAS fundamentals honestl
 **Demonstrated / working:**
 - The full perception → fusion → safety → control loop in CARLA, driven by the custom planner/controller (Traffic Manager is a runtime fallback).
 - Committed AEB/evasion arbiter, radar ground-plane rejection, sensor fusion + tracking, learned-lane/map arbiter, ODD/MRM layer, RL cruise under a safety cap.
-- 179 CARLA-free self-test checks and an extensive unit-test suite (controller, safety, radar, junction, neural scheduling, dataset labels).
+- 190 CARLA-free self-test checks and an extensive unit-test suite (controller, safety, radar, junction, neural scheduling, dataset labels).
 - A curated, seeded scenario harness for AEB/avoidance verification.
 
 **In progress / future work** (see [Roadmap](#roadmap--future-work)): custom 8-class detector accuracy, a full 20k-frame dataset, the complete scenario × weather × fault matrix and soak, and native-engine stability on this custom build (see [Known limitations](#known-limitations)).
@@ -152,7 +152,7 @@ Measured on an RTX 4070 Laptop with the radar-ground-filter code, before the cur
 
 ### CARLA-free self-test
 
-`selftest.py` → **179 checks / 0 failures**, run in CI on every push. Covers LiDAR→image projection, distance fusion, ego-motion tracking, TTC/safe-distance math, VRU/traffic semantics, planning/control, safety-FSM transitions, ODD/MRM, radar ground rejection/sign, and dataset gates. The offline unit-test suite adds **280 tests, all passing**.
+`selftest.py` → **190 checks / 0 failures**, run in CI on every push. Covers LiDAR→image projection, distance fusion, ego-motion tracking, TTC/safe-distance math, VRU/traffic semantics, planning/control, safety-FSM transitions, ODD/MRM, radar ground rejection/sign, and dataset gates. The offline unit-test suite adds **280 tests, all passing**.
 
 ### Live demo run — current stable envelope (2026-09-12)
 
@@ -195,7 +195,7 @@ Honesty about limits is part of the engineering.
 Self-Driving-Perception/
 ├── chinh.py                 # Thin orchestrator — wires modules, owns lifecycle & fail-closed teardown
 ├── config.py                # Single source of truth: sensor geometry + safety thresholds
-├── selftest.py              # CARLA-free self-test of geometry/control/safety (179 checks)
+├── selftest.py              # CARLA-free self-test of geometry/control/safety (190 checks)
 ├── run_scenarios.py         # Seeded ScenarioRunner-style AEB/avoidance harness → JSON report
 ├── evaluate_l3.py           # Weather-profile L3 evaluation → JSON report
 ├── collect_carla_dataset.py # Resumable CARLA capture (schema4) for the data-story sample
@@ -239,7 +239,7 @@ python chinh.py --driver-takeover   # simulate an L3 takeover request
 ## Testing
 
 ```bash
-python selftest.py                 # 179 CARLA-free checks
+python selftest.py                 # 190 CARLA-free checks
 python run_scenarios.py            # curated seeded core suite → logs/scenario_test_report.json
 python run_scenarios.py --scenarios core --weathers clear,light_rain,heavy_rain,fog,storm
 ```

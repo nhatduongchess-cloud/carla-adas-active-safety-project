@@ -102,8 +102,10 @@ class EgoDrivingStack:
                     traffic_light_state = carla_state
         except Exception:
             pass
+        # No collision_risk key: the behaviour planner is tactical only, and
+        # braking is arbitrated in ego_control.py. Passing a hardcoded False
+        # here is what made the planner's old emergency branch unreachable.
         metrics = {
-            "collision_risk": False,
             "nearest_distance": 99.0 if nearest_distance is None else nearest_distance,
             "traffic_light": str(traffic_light_state).capitalize(),
         }

@@ -534,6 +534,7 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                                   conditions['mu'], cfg.FIXED_DELTA, critical=odd['critical'])
 
                 # --- RL: tốc độ tuần hành theo MẬT ĐỘ giao thông (đường vắng nhanh, đông chậm) ---
+                threat = decision.threat or {}
                 if rl_speed is not None and frame_count % cfg.RL_SPEED_EVERY_N == 0:
                     # Mật độ = SỐ PHƯƠNG TIỆN thực phía trước (KHÔNG tính vật tĩnh ven
                     # đường như tường/cột) -> tránh "đông giả" khiến RL ghì tốc độ xe.
@@ -543,17 +544,23 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                     ) / cfg.DENSITY_NORM)
                     # Làm mượt (EMA) -> mật độ không nhảy khi phát hiện chập chờn -> đỡ giật tốc độ.
                     density = (1.0 - cfg.DENSITY_EMA) * density + cfg.DENSITY_EMA * raw_density
-                    th = decision.threat or {}
                     new_target = rl_speed.desired_speed_kmh(
-                        ego_speed_ms, density, th.get('distance_m'), th.get('ttc_s'))
+                        ego_speed_ms, density, threat.get('distance_m'),
+                        threat.get('ttc_s'), min_cruise_kmh=cfg.RL_MIN_CRUISE_KMH)
                     # Mượt tốc độ mục tiêu -> chuyển mức 15->35 km/h ÊM thay vì bậc thang.
                     rl_target_kmh = (1.0 - cfg.RL_TARGET_EMA) * rl_target_kmh + cfg.RL_TARGET_EMA * new_target
 
                 # Một controller dùng chung cho runtime + scenario. Custom stack điều
                 # khiển trajectory/PID; AEB và L3 vẫn luôn có quyền ghi đè cao nhất.
-                target_kmh = rl_target_kmh if rl_speed is not None else max(
-                    10.0, ego_vehicle.get_speed_limit())
-                target_kmh = max(cfg.RL_MIN_CRUISE_KMH, target_kmh)
+                if rl_speed is not None:
+                    # EMA chỉ cập nhật mỗi RL_SPEED_EVERY_N khung, nhưng khoảng
+                    # trống phía trước đổi TỪNG khung. Kẹp lại trần an toàn ở đây
+                    # để mục tiêu tuần hành không bao giờ vượt bao an toàn HIỆN
+                    # TẠI chỉ vì giá trị mượt còn sót lại từ lần chạy policy trước.
+                    target_kmh = min(rl_target_kmh, rl_speed.safety_cap_kmh(
+                        threat.get('distance_m'), threat.get('ttc_s')))
+                else:
+                    target_kmh = max(10.0, ego_vehicle.get_speed_limit())
                 if turn and ego_controller.uses_traffic_manager_control:
                     turn_planner.update(
                         ego_vehicle, world, traffic_manager, turn, frame_count)

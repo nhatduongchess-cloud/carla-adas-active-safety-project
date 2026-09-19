@@ -43,6 +43,7 @@ from sensor_sync import (LatestFrameReader, OptionalFrameReader,
                          SensorFrameError, SensorSyncStats, put_latest,
                          retrieve_exact_frame, warmup_sensor_streams)  # noqa: E402
 from local_planner import LocalPlanner  # noqa: E402
+from planner import BehaviorPlanner, DrivingState  # noqa: E402
 from lateral_controller import LateralController  # noqa: E402
 from longitudinal_controller import LongitudinalController  # noqa: E402
 from ego_motion import EgoMotionEstimator  # noqa: E402
@@ -579,6 +580,22 @@ check("safety-cap: vat can gan 8m -> tuan hanh < 25 km/h",
 check("safety-cap: khong vat can -> khong bi ghi (>30)",
       ctrl.desired_speed_kmh(5.0, 0.1, None, None) > 30.0)
 
+# SAN (min_cruise) PHAI NAM TRONG TRAN, khong duoc nang nguoc muc tieu da bi ha.
+# Loi cu: chinh.py ap san 18 km/h SAU khi trandda kep -> vat can 8m van bi day
+# len 18 km/h. Bay gio san ap TRUOC tran nen tran luon thang.
+_cap_8m = RLSpeedController.safety_cap_kmh(8.0, 3.0)
+check("san khong bao gio vuot tran: vat can 8m + san 18 km/h",
+      ctrl.desired_speed_kmh(5.0, 0.1, 8.0, 3.0, min_cruise_kmh=18.0) <= _cap_8m + 1e-9)
+check("tran 8m/ttc3 that su thap hon san 18 km/h (neu khong, phep thu tren vo nghia)",
+      _cap_8m < 18.0)
+check("san van co tac dung khi duong thoang",
+      abs(ctrl.desired_speed_kmh(5.0, 0.9, None, None, min_cruise_kmh=40.0) - 40.0) < 1e-9)
+check("san mac dinh 0 -> khong doi hanh vi cu",
+      abs(ctrl.desired_speed_kmh(5.0, 0.9, 10.0, 2.0)
+          - ctrl.desired_speed_kmh(5.0, 0.9, 10.0, 2.0, min_cruise_kmh=0.0)) < 1e-9)
+check("safety_cap_kmh la API cong khai, khong vat can -> vo cuc",
+      RLSpeedController.safety_cap_kmh(None, None) == float("inf"))
+
 # Turn intent
 check("intent_to_right('right') True", intent_to_right("right") is True)
 check("intent_to_right('left') False", intent_to_right("left") is False)
@@ -747,6 +764,27 @@ check("route command left chon nhanh trai",
       _select_next_waypoint(branches, 0.0, "left").transform.rotation.yaw == -45.0)
 check("route command right chon nhanh phai",
       _select_next_waypoint(branches, 0.0, "right").transform.rotation.yaw == 50.0)
+
+# BehaviorPlanner CHI lo hanh vi chien thuat. An toan thuoc ve ego_control.py
+# (mot diem trong tai duy nhat). Truoc day planner co nhanh EMERGENCY_STOP nhung
+# khong bao gio chay duoc vi ego_driving_stack luon truyen collision_risk=False.
+_states = {s.name for s in DrivingState}
+check("DrivingState khong con trang thai an toan",
+      _states == {"LANE_FOLLOWING", "FOLLOWING_VEHICLE", "STOPPING_AT_LIGHT"})
+_bp = BehaviorPlanner()
+check("planner bo qua collision_risk (phanh khong phai viec cua no)",
+      _bp.update_state({"collision_risk": True, "nearest_distance": 99.0})
+      == DrivingState.LANE_FOLLOWING)
+check("planner: xe truoc 10m -> FOLLOWING_VEHICLE",
+      _bp.update_state({"nearest_distance": 10.0}) == DrivingState.FOLLOWING_VEHICLE)
+check("planner: gian cach phuc hoi 30m -> LANE_FOLLOWING",
+      _bp.update_state({"nearest_distance": 30.0}) == DrivingState.LANE_FOLLOWING)
+check("planner: den do -> STOPPING_AT_LIGHT",
+      _bp.update_state({"nearest_distance": 20.0, "traffic_light": "Red"})
+      == DrivingState.STOPPING_AT_LIGHT)
+check("planner: den xanh -> LANE_FOLLOWING",
+      _bp.update_state({"nearest_distance": 20.0, "traffic_light": "Green"})
+      == DrivingState.LANE_FOLLOWING)
 
 lon = LongitudinalController(kp=0.4, ki=0.05, kd=0.05)
 throttle, brake = lon.update(10.0, 0.0, 0.05)

@@ -510,21 +510,8 @@ native crash can be localised to the phase that was running.
 ## 12. Known architectural gaps
 
 Recorded because an architecture document that only describes the intent is a
-brochure.
-
-**G1 — `planner.py`'s emergency branch is unreachable.** `DrivingState.EMERGENCY_STOP`
-is selected from `collision_risk` (`planner.py:34-37`), but `ego_driving_stack.py:106`
-hardcodes `"collision_risk": False` in the metrics dict it passes. AEB is handled one
-layer above, in `ego_control.py`, so behaviour is correct — but the planner carries a
-safety branch that never executes, and `OBSTACLE_AVOIDANCE` is declared and never
-assigned. Both should be deleted or wired.
-
-**G2 — The cruise floor is applied after the safety cap.**
-`RL_MIN_CRUISE_KMH = 18.0` is applied at `chinh.py:556`, *after*
-`rl_speed_controller` has already clamped the target to its kinematic envelope. A
-floor applied after a cap can raise a deliberately-lowered target. In practice AEB
-and L3 sit above this in arbitration and overwrite it, so no unsafe command has been
-observed — but the ordering is wrong and the floor should move above the cap.
+brochure. Two of the seven were found by writing this document and have since
+been fixed; they are kept in [Resolved](#resolved) below rather than deleted.
 
 **G3 — ODD inputs are static within a run.** `estimate_conditions()` and
 `set_conditions()` are called once before the loop (`chinh.py:300-306`); only
@@ -553,20 +540,57 @@ CARLA ports — would be worth running before a scored scenario batch too.
 the engine build, not in this code. `stable_async` is the mitigation, and its cost is
 the frame-pairing skew described in [§3](#3-execution-model).
 
+### Resolved
+
+Kept here rather than deleted, because how a defect was found and what it turned
+out to cost is part of the architecture's history.
+
+**G1 — `planner.py` carried an unreachable safety branch. Fixed.**
+`DrivingState.EMERGENCY_STOP` was selected from `collision_risk`, but the only
+caller passed `collision_risk=False` unconditionally, so the branch never ran.
+It was tempting to wire it; that would have been the wrong repair. Collision
+handling belongs to the single arbitration point in `ego_control.py`
+([§8](#8-command-arbitration)), and a second authority over the brake means the
+vehicle's behaviour depends on which one is consulted first. The branch,
+the `EMERGENCY_STOP` and `OBSTACLE_AVOIDANCE` states, and the dead
+`collision_risk` key were removed, and the planner's docstring now says plainly
+that braking is not its decision. Self-test pins the new shape: `DrivingState`
+must contain exactly the three tactical states, and the planner must ignore
+`collision_risk` when it is passed.
+
+**G2 — The cruise floor was applied after the safety cap. Fixed.**
+`RL_MIN_CRUISE_KMH = 18.0` was applied in `chinh.py` *after* the RL controller
+had already clamped its target to the kinematic envelope, so the floor could
+raise a target that had been deliberately lowered. The numbers are not
+marginal: with an obstacle 8 m ahead at TTC 3 s the envelope allows
+**6.97 km/h**, and the floor was lifting the cruise target back to
+**18 km/h** — 158% above the cap. Nothing unsafe was observed in a run because
+AEB and L3 sit above the cruise target in arbitration and overwrite it, but the
+cruise layer was asking for a speed its own safety check had already refused.
+
+The floor now lives inside `RLSpeedController.desired_speed_kmh` as
+`min(max(raw, floor), cap)`, so the envelope has the last word, and
+`safety_cap_kmh` became public so `chinh.py` can re-clamp **every frame** —
+the policy runs only once every `RL_SPEED_EVERY_N = 5` frames while the gap
+ahead changes on every one, so the smoothed target could otherwise sit above a
+cap that had since tightened. Five self-test checks pin the ordering, including
+one that asserts the cap at 8 m really is below the floor, so the test cannot
+quietly become vacuous if the constants change.
+
 ---
 
 ## 13. Verification architecture
 
 ```mermaid
 flowchart BT
-    A["selftest.py — 179 checks, 17 areas<br/>no CARLA, no torch, no OpenCV"]
+    A["selftest.py — 190 checks, 17 areas<br/>no CARLA, no torch, no OpenCV"]
     B["test_*.py unit suite<br/>runs locally, imports CARLA client and torch"]
     C["run_scenarios.py — 15-scenario catalog, 6-scenario core suite<br/>seeded × weather × fault matrix"]
     D["evaluate_l3.py — weather-profile L3 evaluation"]
     A --> B --> C --> D
 ```
 
-**Tier 1 — simulator-free self-test.** `selftest.py` runs **179 checks across 17
+**Tier 1 — simulator-free self-test.** `selftest.py` runs **190 checks across 17
 areas** and imports neither CARLA nor torch nor OpenCV (`selftest.py:1-13`). It
 covers fusion projection, the AEB state machine, the low-speed stationary
 regression, tracking, predictive AEB, the commitment/hysteresis arbiter, stopping
@@ -593,7 +617,7 @@ origin would flatter the result.
 
 **CI** (`.github/workflows/selftest.yml`) runs three jobs on every push and pull
 request to `main`: Ruff correctness lint, Mypy over the safety-evidence core, and
-the 179-check self-test.
+the 190-check self-test.
 
 ---
 
