@@ -62,6 +62,8 @@ class ActiveSafetySystem:
         follow_speed_diff: float = 60.0,
         vru_lateral_margin_m: float = 0.8,
         vru_prediction_horizon_s: float = 4.0,
+        evade_commit_s: float = 1.5,
+        brake_exit_factor: float = 1.4,
     ) -> None:
         self.lane_half = lane_half_width_m
         self.min_cluster_points = min_cluster_points
@@ -85,9 +87,20 @@ class ActiveSafetySystem:
         self.mu = 0.8               # hệ số ma sát (dry mặc định)
         self.gap_multiplier = 1.0   # nhân khoảng cách an toàn khi thời tiết xấu
 
-        # Tham số CAM KẾT + TRỄ (chống phân vân brake<->evade).
-        self.evade_commit_s = 1.5       # giữ pha né tối thiểu ngần này (giây)
-        self.brake_exit_factor = 1.4    # chỉ nhả phanh khi khoảng cách/TTC > ngưỡng × hệ số
+        # Tham số CAM KẾT + TRỄ (chống phân vân brake<->evade). Nhận qua tham số
+        # để config.py là nguồn duy nhất và scenario harness quét được.
+        # KIỂM TRA ĐẦU VÀO, không im lặng nhận giá trị vô nghĩa:
+        #   - commit âm nghĩa là "không cam kết", đúng bằng bug mà nó sinh ra để
+        #     chặn, nên bị từ chối;
+        #   - hệ số nhả phanh < 1.0 khiến ngưỡng NHẢ thấp hơn ngưỡng BÓP, tức là
+        #     trễ ngược dấu -> phanh rung. Đây là lỗi cấu hình, không phải lựa chọn.
+        if not (evade_commit_s >= 0.0):
+            raise ValueError(f"evade_commit_s phải >= 0, nhận {evade_commit_s!r}")
+        if not (brake_exit_factor >= 1.0):
+            raise ValueError(
+                f"brake_exit_factor phải >= 1.0 (trễ không âm), nhận {brake_exit_factor!r}")
+        self.evade_commit_s = float(evade_commit_s)
+        self.brake_exit_factor = float(brake_exit_factor)
         self.evade_min_ttc = 2.0        # chỉ né khi còn ĐỦ thời gian; ít hơn -> phanh
 
         # Chống "bò vào vật cản" (creep-into-obstacle) — nguồn gốc va chạm với vật

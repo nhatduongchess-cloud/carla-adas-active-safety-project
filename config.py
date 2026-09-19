@@ -131,6 +131,13 @@ REACTION_TIME_S = 1.0
 MIN_SAFE_DIST_M = 6.0
 
 # Ngưỡng thời gian-va-chạm (Time-To-Collision, giây)
+# Cam kết + trễ của bộ trọng tài an toàn (chống phân vân brake<->evade). Nằm ở
+# đây chứ không hardcode trong active_safety.py để scenario harness quét được.
+EVADE_COMMIT_S = 1.5      # giữ pha né tối thiểu ngần này (giây)
+BRAKE_EXIT_FACTOR = 1.4   # chỉ nhả phanh khi khoảng cách/TTC > ngưỡng × hệ số
+# Đọc lại thời tiết thật của world mỗi ngần này khung (40 ≈ 1 s ở 40 FPS).
+WEATHER_REFRESH_EVERY_N = 40
+
 CRITICAL_TTC_S = 1.6   # dưới mức này -> PHANH GẤP
 WARNING_TTC_S = 3.0    # dưới mức này -> giảm tốc / tránh
 MIN_CLOSING_SPEED = 0.3  # m/s, dưới mức này coi như không tiến lại gần

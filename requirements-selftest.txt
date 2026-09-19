@@ -1,0 +1,19 @@
+# Offline verification only — the exact set the CI jobs install.
+#
+# This file exists so that "what the self-test needs" has ONE answer, shared by
+# CI and by anyone running the gates locally. It deliberately does NOT include
+# carla, torch or ultralytics: the offline suites are the ones that run without
+# a simulator, a GPU or model weights.
+#
+#   python -m pip install -r requirements-selftest.txt
+#   python selftest.py
+#   python -m unittest <offline group, see .github/workflows/selftest.yml>
+#
+# opencv-python-headless is required, not optional: selftest.py imports
+# TrafficLightTemporalVoter, and modules/traffic_light.py imports cv2 at module
+# level. The header of selftest.py used to claim otherwise; it was wrong.
+numpy>=1.24
+opencv-python-headless>=4.8
+pyyaml>=6.0
+scikit-learn>=1.4
+pillow>=10.0

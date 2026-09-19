@@ -5,7 +5,17 @@ Scope: analysis and containment of an intermittent native crash in the local CAR
 
 ## 1. Summary
 
-Under the heavier sensor-capture workload, the local CARLA server terminates with a native `EXCEPTION_ACCESS_VIOLATION` in skeletal-mesh **scene-proxy render dispatch** (`FSkeletalMeshSceneProxy` / `MeshObject`), reached inline from the camera's scene-capture path. The fault is **intermittent**, reproduces **across graphics back-ends and threading modes**, and is **not** an out-of-memory or a RenderThread-scheduling race. The available crash dumps do not contain the heap pages that would identify the specific freed/corrupted object, and no matching native source or build tree exists for this custom engine build, so the root cause cannot be proven or repaired within project scope. Work is therefore scoped to a **stable capture envelope** in which the pipeline runs reliably, and this fault is carried as a documented limitation.
+Under the heavier sensor-capture workload, the local CARLA server terminates with a native `EXCEPTION_ACCESS_VIOLATION` in skeletal-mesh **scene-proxy render dispatch** (`FSkeletalMeshSceneProxy` / `MeshObject`), reached inline from the camera's scene-capture path. The fault is **intermittent** and reproduces **across graphics back-ends and threading modes**. No evidence of an out-of-memory condition or a RenderThread-scheduling race was found in the data collected — which rules those out as *established* explanations, not as possibilities. Reproducing on both D3D11 and D3D12 eliminates a D3D12-specific defect; it does not clear the rendering path as a whole. The available crash dumps do not contain the heap pages that would identify the specific freed/corrupted object, and no matching native source or build tree exists for this custom engine build, so the root cause cannot be proven or repaired within project scope. Work is therefore scoped to a **stable capture envelope** in which the pipeline runs reliably, and this fault is carried as a documented limitation.
+
+> **What is established and what is not.** *Observed:* the access-violation
+> addresses and return RVAs, the faulting function and file:line from the crash
+> log, that it reproduces on D3D11 and D3D12, and the run durations in §4.
+> *Hypothesis:* which object lifetime is at fault. A pure-virtual / null-vtable
+> dispatch is consistent with concurrent construction and destruction, and equally
+> consistent with use-after-free or heap corruption; nothing gathered so far
+> separates them, and the retained minidumps lack the heap pages that would.
+> Wherever this document says "consistent with", read it as a hypothesis that
+> survived the evidence, not as a cause that was demonstrated.
 
 ## 2. Environment
 
@@ -50,7 +60,7 @@ This directly confirms the earlier object-lifetime hypothesis and sharpens it:
 - The trigger is the **camera sensor's `SceneCapture`** — i.e., the crash is intrinsic to capturing frames of a scene containing an animated skeletal mesh whose scene-proxy lifecycle races the capture render pass.
 - It is a **RenderThread** fault reached through CARLA's `Render_CARLA` scene-capture path, consistent with the earlier `-onethread` and cross-RHI reproductions (the capture is invoked regardless of render-thread scheduling).
 
-This supersedes the heap-less minidumps: it names the faulting function, file:line, and the exact render path, and it occurred on an otherwise-healthy clean-driving run — showing the fault is **intermittent and timing-dependent** (here ~20 s in), not tied to heavy load. Containment therefore relies on **bounded run duration**: ending a capture run before the intermittent window (e.g., short ≤12–15 s demo clips) avoids it, but does not repair it.
+This supersedes the heap-less minidumps: it names the faulting function, file:line, and the exact render path, and it occurred on an otherwise-healthy clean-driving run — showing the fault is **intermittent and timing-dependent** (here ~20 s in), not tied to heavy load. Containment therefore relies on **bounded run duration**: shorter capture runs (≤12–15 s demo clips) have not been observed to hit it. That is an observation over a small number of runs on an intermittent fault, not a safe-window guarantee — a short run that survives is evidence about that run only, and the sample here is far too small to bound the probability. It certainly does not repair anything.
 
 ## 4. Reproduction matrix
 
@@ -85,7 +95,7 @@ An **object-lifetime / memory-corruption** issue: a skeletal-mesh scene proxy (e
 
 ## 8. Containment — the stable envelope
 
-Demos, captures and scenario runs are scoped to the configuration that reliably survives:
+Demos, captures and scenario runs are scoped to the configuration under which the fault has not been observed. "Not observed" is the accurate phrase: the fault is intermittent and the number of runs behind this envelope is small, so this is a working boundary, not a demonstrated-safe one:
 
 - Low quality, 640×360, default RHI, `-fullcrashdumpalways`.
 - Bounded run duration (≈60 s), one map at a time, minimal-to-moderate sensor load.

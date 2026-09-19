@@ -1,11 +1,14 @@
 ﻿name: CI
 
-# Three CARLA-free gates on every push / PR:
+# Four CARLA-free gates on every push / PR:
 #   lint      - ruff correctness gate (pyflakes F + syntax E9 + bugbear B)
 #   typecheck - mypy on the safety-evidence core
-#   selftest  - selftest.py geometry + safety-FSM checks (190)
-# The full unit-test suite (test_*.py) imports the CARLA client / PyTorch and
-# runs in the local CARLA environment, not here.
+#   selftest  - selftest.py geometry + safety-FSM checks (204)
+#   offline-tests - the test_*.py modules that need no CARLA client
+# Six test_*.py modules import the CARLA client and cannot run here
+# (test_capture_lifecycle, test_dataset_capture, test_ego_control,
+# test_junction_route, test_road_waypoints, test_sensor_runtime); those stay in
+# the local CARLA environment. Everything else now runs on every push.
 
 on:
   push:
@@ -37,7 +40,7 @@ jobs:
       - run: mypy
 
   selftest:
-    name: Self-test (190 CARLA-free checks)
+    name: Self-test (204 CARLA-free checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +48,31 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install self-test dependencies
-        run: python -m pip install --upgrade pip numpy pyyaml opencv-python-headless scikit-learn pillow
+        run: python -m pip install --upgrade pip -r requirements-selftest.txt
       - name: Run self-test
         run: python selftest.py
+
+  offline-tests:
+    name: Unit tests that run without CARLA (189 tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install self-test dependencies
+        run: python -m pip install --upgrade pip -r requirements-selftest.txt
+      # The list is explicit, not a discovery glob, because `unittest discover`
+      # would also pick up the six modules that import the CARLA client and the
+      # job would fail for an environment reason rather than a code one. Adding
+      # a new offline test file means adding it here; that is the cost of having
+      # this job mean something.
+      - name: Run the offline unit-test group
+        run: >
+          python -m unittest
+          test_audit_training_dataset test_carla_probe test_dataset_labels
+          test_decision_trace test_image_quality test_inference_telemetry
+          test_launch_carla test_neural_decoupling test_perception_contracts
+          test_pipeline_metrics test_runtime_cleanup test_runtime_config
+          test_runtime_report test_safety_geometry test_sensor_sync
+          test_validate_dataset

@@ -53,7 +53,7 @@ try:
     from mot_tracker import MultiObjectTracker
     from odd_monitor import ODDMonitor
     from mrm_controller import L3StateMachine
-    from weather_model import estimate_conditions
+    from weather_model import conditions_from
     from weather_config import load_weather_profiles, weather_kwargs
     from ego_control import EgoController, spawn_ego_safe
     from rl_speed_controller import RLSpeedController
@@ -198,6 +198,8 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
             evade_lookahead_m=cfg.EVADE_LOOKAHEAD_M,
             lead_slow_ratio=cfg.LEAD_SLOW_RATIO,
             follow_speed_diff=cfg.TM_FOLLOW_SPEED_DIFF,
+            evade_commit_s=cfg.EVADE_COMMIT_S,
+            brake_exit_factor=cfg.BRAKE_EXIT_FACTOR,
             vru_lateral_margin_m=cfg.VRU_LATERAL_MARGIN_M,
             vru_prediction_horizon_s=cfg.VRU_PREDICTION_HORIZON_S,
         )
@@ -297,11 +299,13 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
             print(f"[Weather] Áp hồ sơ '{weather}'.")
         else:
             print(f"[Weather] Không có hồ sơ '{weather}', giữ thời tiết hiện tại.")
-        conditions = estimate_conditions(
-            precipitation=prof.get('precipitation', 0.0),
-            fog_density=prof.get('fog_density', 0.0),
-            wetness=prof.get('wetness', 0.0),
-            precipitation_deposits=prof.get('precipitation_deposits', 0.0))
+        # NGUỒN DUY NHẤT LÀ THỜI TIẾT THẬT CỦA WORLD, không phải hồ sơ.
+        # Trước đây khi thiếu hồ sơ, code in "giữ thời tiết hiện tại" rồi vẫn tính
+        # điều kiện từ mặc định 0.0 -> mu 0.9 -> một world ĐANG MƯA bị mô hình hóa
+        # thành trời khô, quãng đường phanh bị ước lượng ngắn đi, vùng an toàn hẹp
+        # lại và AEB kích hoạt muộn hơn mức cần. Đọc world thì cả hai nhánh
+        # (có hồ sơ / không hồ sơ) đều mô tả đúng mặt đường xe đang chạy.
+        conditions = conditions_from(world.get_weather())
         odd = odd_monitor.classify(conditions)
         active_safety.set_conditions(conditions['mu'], odd['gap_multiplier'])
         print(f"[ODD] {odd['state']} | vis={conditions['visibility_m']}m "
@@ -529,7 +533,20 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                     aeb_triggered = True
 
                 # --- Fallback L3 (ODD): TOR -> MRM -> SAFE_STOP ---
+                # Thời tiết có thể đổi giữa phiên chạy; đọc lại ở tần suất thấp
+                # (1 RPC mỗi WEATHER_REFRESH_EVERY_N khung) thay vì đóng băng
+                # điều kiện lúc khởi tạo.
+                if frame_count % cfg.WEATHER_REFRESH_EVERY_N == 0:
+                    try:
+                        conditions = conditions_from(world.get_weather())
+                    except Exception:
+                        pass  # giữ snapshot trước đó, KHÔNG rơi về mặc định khô
                 odd = odd_monitor.classify(conditions, health_monitor.summary())
+                # Đẩy hệ số giãn khoảng cách xuống lớp an toàn MỖI KHUNG. Trước
+                # đây set_conditions() chỉ chạy một lần trước vòng lặp, nên ODD
+                # chuyển DEGRADED/VIOLATION (kể cả khi mất dư thừa LiDAR+radar)
+                # KHÔNG hề nới vùng an toàn — đúng điều tài liệu nói là có.
+                active_safety.set_conditions(conditions['mu'], odd['gap_multiplier'])
                 l3 = l3_sm.update(odd['state'], driver_takeover, ego_speed_ms,
                                   conditions['mu'], cfg.FIXED_DELTA, critical=odd['critical'])
 

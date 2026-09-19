@@ -306,8 +306,17 @@ warning    = nearest < dyn_safe         or  ttc < WARNING_TTC_S
 | `DRY_FRICTION_MU` | 0.85 | `config.py:261` |
 
 `gap_multiplier` is supplied by the ODD monitor: 1.0 normal, 1.5 degraded, 2.0 on
-violation (`odd_monitor.py:37-49`). Degrading the environment therefore widens the
-safety envelope automatically, without a separate rule.
+violation (`odd_monitor.py:37-49`), so degrading the environment widens the safety
+envelope without needing a separate rule.
+
+That sentence was aspirational when this document was first written, and an external
+review was right to test it. `ActiveSafety.set_conditions()` was called once before
+the loop; inside the loop the ODD state was re-classified every frame but the
+resulting multiplier never reached the safety layer, so a run that degraded to
+VIOLATION kept driving on the envelope it had at start-up. It is now pushed down
+every frame, in both `chinh.py` and `run_scenarios.py`. The difference is not
+cosmetic: at 15 m/s on a wet road `dyn_safe` goes from 46.5 m at ×1.0 to 87.0 m
+at ×2.0.
 
 ### 7.3 The committed state machine
 
@@ -510,20 +519,9 @@ native crash can be localised to the phase that was running.
 ## 12. Known architectural gaps
 
 Recorded because an architecture document that only describes the intent is a
-brochure. Two of the seven were found by writing this document and have since
-been fixed; they are kept in [Resolved](#resolved) below rather than deleted.
-
-**G3 — ODD inputs are static within a run.** `estimate_conditions()` and
-`set_conditions()` are called once before the loop (`chinh.py:300-306`); only
-`odd_monitor.classify()` re-runs per frame (`:532`). Friction, visibility and SNR are
-therefore derived from the weather profile and fixed for the run; the only ODD input
-that genuinely varies is sensor redundancy loss. Dynamic weather would require
-moving the estimate inside the loop.
-
-**G4 — Two safety constants live outside `config.py`.** `evade_commit_s = 1.5` and
-`brake_exit_factor = 1.4` are hardcoded in `ActiveSafety.__init__`
-(`active_safety.py:89-90`) rather than in the single source of truth, so they cannot
-be swept by the scenario harness without editing code.
+brochure. Four of the seven have since been fixed — two found by writing this
+document, two by an external review that checked its claims against the code — and
+they are kept in [Resolved](#resolved) below rather than deleted.
 
 **G5 — The README state diagram is incomplete.** It shows four states; the
 implementation also emits `BRAKE_HOLD` and `BRAKE_TO_STOP`
@@ -535,10 +533,18 @@ by `smoke_carla_stack.py` and `test_carla_probe.py`. The identity checks it perf
 executable hash, PID creation time to defeat PID reuse, foreign connections on the
 CARLA ports — would be worth running before a scored scenario batch too.
 
-**G7 — B01, the native render-thread crash**, is root-caused and documented in
-[`docs/B01_FAILURE_ANALYSIS.md`](B01_FAILURE_ANALYSIS.md) but not fixed; it lives in
-the engine build, not in this code. `stable_async` is the mitigation, and its cost is
-the frame-pairing skew described in [§3](#3-execution-model).
+**G7 — B01, the native render-thread crash, is OPEN and not root-caused.**
+Earlier wording here and in
+[`docs/B01_FAILURE_ANALYSIS.md`](B01_FAILURE_ANALYSIS.md) called it "root-caused";
+that overstated the evidence and is corrected. *Observed*: the process faults inside
+the engine's render path, it reproduces on both D3D11 and D3D12, and a stack trace
+locates the failing call path. *Hypothesis*: which object lifetime is at fault — a
+pure-virtual-call fault is consistent with concurrent construction and destruction,
+but equally with use-after-free or heap corruption, and nothing gathered so far
+separates them. A short run that survives is not evidence that short runs are safe.
+`stable_async` is a mitigation with a measured cost — the frame-pairing skew in
+[§3](#3-execution-model) — not a fix, and the fault lives in the engine build rather
+than in this code.
 
 ### Resolved
 
@@ -557,6 +563,28 @@ the `EMERGENCY_STOP` and `OBSTACLE_AVOIDANCE` states, and the dead
 that braking is not its decision. Self-test pins the new shape: `DrivingState`
 must contain exactly the three tactical states, and the planner must ignore
 `collision_risk` when it is passed.
+
+**G3 — Environment conditions were frozen at start-up, and the fallback was
+dangerous. Fixed.** Two separate faults hid behind one line. When a weather profile
+failed to load, the code printed "keeping the current world weather" and then
+computed conditions from **all-zero defaults**, which is the driest possible
+reading: a world actually running heavy rain was modelled at μ 0.90 instead of
+0.45, under-estimating the braking distance at 15 m/s by **12.7 m (46%)** and
+shrinking the safety envelope exactly when it should have grown. Conditions are now
+read from `world.get_weather()` on both paths, through a pure
+`weather_model.conditions_from()` that takes a profile dict or a CARLA weather
+object without importing CARLA, and they are re-read at 1 Hz so a weather change
+mid-run propagates. The old zero defaults survive only for the case where there is
+genuinely no source at all, and the function says in its docstring why that is the
+dangerous direction.
+
+**G4 — Two safety constants lived outside `config.py`. Fixed.** `evade_commit_s`
+and `brake_exit_factor` are constructor parameters fed from `cfg.EVADE_COMMIT_S`
+and `cfg.BRAKE_EXIT_FACTOR` at all three entry points, so the scenario harness can
+sweep them. Defaults are unchanged, and invalid values are now rejected rather than
+accepted quietly: a `brake_exit_factor` below 1.0 would make the release threshold
+lower than the engage threshold — hysteresis with the sign reversed, which is a
+brake that chatters.
 
 **G2 — The cruise floor was applied after the safety cap. Fixed.**
 `RL_MIN_CRUISE_KMH = 18.0` was applied in `chinh.py` *after* the RL controller
@@ -583,15 +611,20 @@ quietly become vacuous if the constants change.
 
 ```mermaid
 flowchart BT
-    A["selftest.py — 190 checks, 17 areas<br/>no CARLA, no torch, no OpenCV"]
+    A["selftest.py — 204 checks, 17 areas<br/>no CARLA, no torch, no weights"]
     B["test_*.py unit suite<br/>runs locally, imports CARLA client and torch"]
     C["run_scenarios.py — 15-scenario catalog, 6-scenario core suite<br/>seeded × weather × fault matrix"]
     D["evaluate_l3.py — weather-profile L3 evaluation"]
     A --> B --> C --> D
 ```
 
-**Tier 1 — simulator-free self-test.** `selftest.py` runs **190 checks across 17
-areas** and imports neither CARLA nor torch nor OpenCV (`selftest.py:1-13`). It
+**Tier 1 — simulator-free self-test.** `selftest.py` runs **204 checks across 17
+areas** and imports neither CARLA, nor torch, nor ultralytics — no simulator, no
+GPU, no model weights. It does need a handful of ordinary libraries, and this
+document previously said otherwise: `selftest.py` imports
+`TrafficLightTemporalVoter`, and `modules/traffic_light.py` imports `cv2` at
+module level, so **OpenCV is a hard dependency**. The full set is pinned in
+`requirements-selftest.txt`, which is exactly what CI installs. It
 covers fusion projection, the AEB state machine, the low-speed stationary
 regression, tracking, predictive AEB, the commitment/hysteresis arbiter, stopping
 distance, the weather/ODD model, the L3 state machine, the scenario catalog, the RL
@@ -599,9 +632,11 @@ experiment and controller, sensor frame integrity, planning and control, traffic
 semantics, and the radar/health/async/lane contracts. This tier exists so that the
 safety logic is verifiable in CI, where no simulator can run.
 
-**Tier 2 — unit suite.** The `test_*.py` files at repository root exercise the parts
-that need the CARLA client or a GPU. They run locally and deliberately not in CI
-(`.github/workflows/selftest.yml:3-7`).
+**Tier 2 — unit suite.** Of the 22 `test_*.py` modules at repository root, **16 run
+with no CARLA client, no torch and no weights — 189 tests** — and they now run on
+every push as the `offline-tests` CI job. The remaining six import the CARLA client
+and stay local. Splitting them was the point: "needs a simulator" had been assumed
+of the whole suite, and it was only ever true of a quarter of it.
 
 **Tier 3 — scenario harness.** `run_scenarios.py` runs a catalog of 15 scenarios
 across lead / crossing / cut-in / junction / oncoming categories, nested
@@ -617,7 +652,7 @@ origin would flatter the result.
 
 **CI** (`.github/workflows/selftest.yml`) runs three jobs on every push and pull
 request to `main`: Ruff correctness lint, Mypy over the safety-evidence core, and
-the 190-check self-test.
+the 204-check self-test, and the 189 offline unit tests.
 
 ---
 

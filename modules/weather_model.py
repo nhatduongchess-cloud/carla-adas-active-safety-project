@@ -34,3 +34,40 @@ def estimate_conditions(precipitation=0.0, fog_density=0.0, wetness=0.0,
         "mu": round(mu, 3),
         "snr": round(snr, 3),
     }
+
+#: Bốn trường thời tiết CARLA mà estimate_conditions() cần. Tách riêng để đọc
+#: được từ BẤT KỲ nguồn nào (hồ sơ YAML, hay carla.WeatherParameters lấy từ
+#: world) mà module này vẫn không phải import carla — nhờ vậy selftest chạy
+#: offline được.
+WEATHER_FIELDS = ("precipitation", "fog_density", "wetness",
+                  "precipitation_deposits")
+
+
+def weather_params(source) -> dict:
+    """Trích 4 trường thời tiết từ dict hoặc từ đối tượng có thuộc tính cùng tên.
+
+    TRẢ VỀ MẶC ĐỊNH 0.0 LÀ MỘT LỰA CHỌN NGUY HIỂM, nên nó chỉ được dùng khi
+    KHÔNG có nguồn nào cả (source=None). Lý do: 0.0 ở cả bốn trường nghĩa là
+    "trời khô hoàn toàn" -> mu = 0.9 -> quãng đường phanh ngắn nhất -> vùng an
+    toàn HẸP NHẤT. Nếu thế giới đang mưa mà ta mô hình hóa thành khô, AEB sẽ
+    kích hoạt MUỘN hơn mức cần. Vì vậy caller phải truyền thời tiết THẬT của
+    world khi không nạp được hồ sơ, thay vì rơi về mặc định.
+    """
+    if source is None:
+        return {name: 0.0 for name in WEATHER_FIELDS}
+    out = {}
+    for name in WEATHER_FIELDS:
+        if isinstance(source, dict):
+            value = source.get(name, 0.0)
+        else:
+            value = getattr(source, name, 0.0)
+        try:
+            out[name] = float(value)
+        except (TypeError, ValueError):
+            out[name] = 0.0
+    return out
+
+
+def conditions_from(source) -> dict:
+    """Thời tiết (hồ sơ hoặc world) -> visibility/mu/snr. Một đường duy nhất."""
+    return estimate_conditions(**weather_params(source))

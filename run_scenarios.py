@@ -99,7 +99,9 @@ def run_one(client, world, bp_lib, spec, shared, args):
         evade_lookahead_m=cfg.EVADE_LOOKAHEAD_M, lead_slow_ratio=cfg.LEAD_SLOW_RATIO,
         follow_speed_diff=cfg.TM_FOLLOW_SPEED_DIFF,
         vru_lateral_margin_m=cfg.VRU_LATERAL_MARGIN_M,
-        vru_prediction_horizon_s=cfg.VRU_PREDICTION_HORIZON_S)
+        vru_prediction_horizon_s=cfg.VRU_PREDICTION_HORIZON_S,
+        evade_commit_s=cfg.EVADE_COMMIT_S,
+        brake_exit_factor=cfg.BRAKE_EXIT_FACTOR)
     mot = MultiObjectTracker(dt=dt)
     ego_motion_tracker = EgoMotionEstimator()
     l3_sm = L3StateMachine(tor_window_s=cfg.TOR_WINDOW_S, mrm_decel_frac=cfg.MRM_DECEL_FRAC)
@@ -300,6 +302,8 @@ def run_one(client, world, bp_lib, spec, shared, args):
                 path_points=ego_path, lane_context=lane_context,
                 radar_targets=radar_safety_targets)
             odd = odd_monitor.classify(conditions, health.summary())
+            # Cùng lý do như chinh.py: ODD đổi thì vùng an toàn phải đổi theo.
+            safety.set_conditions(conditions['mu'], odd['gap_multiplier'])
             odd_states_seen.add(odd['state'])
             l3 = l3_sm.update(odd['state'], False, speed, conditions['mu'], dt,
                               critical=odd['critical'])

@@ -80,7 +80,9 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
         evade_lookahead_m=cfg.EVADE_LOOKAHEAD_M, lead_slow_ratio=cfg.LEAD_SLOW_RATIO,
         follow_speed_diff=cfg.TM_FOLLOW_SPEED_DIFF,
         vru_lateral_margin_m=cfg.VRU_LATERAL_MARGIN_M,
-        vru_prediction_horizon_s=cfg.VRU_PREDICTION_HORIZON_S)
+        vru_prediction_horizon_s=cfg.VRU_PREDICTION_HORIZON_S,
+        evade_commit_s=cfg.EVADE_COMMIT_S,
+        brake_exit_factor=cfg.BRAKE_EXIT_FACTOR)
     mot = MultiObjectTracker(dt=dt)
     ego_motion_tracker = EgoMotionEstimator()
     odd_monitor = ODDMonitor()

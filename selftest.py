@@ -2,10 +2,20 @@
 """
 Self-test KHÔNG cần CARLA cho lớp hình học + an toàn.
 
-Chạy:  python selftest.py
-Chỉ phụ thuộc numpy (cho sensor_fusion) và stdlib (active_safety). KHÔNG import
-carla / torch / cv2 / ultralytics, nên kiểm được phần "toán" của pipeline trước
-khi mở server CARLA.
+Chạy:
+    python -m pip install -r requirements-selftest.txt
+    python selftest.py
+
+PHỤ THUỘC — nói đúng, vì bản mô tả cũ ở đây SAI. Suite này KHÔNG import carla,
+torch hay ultralytics: không cần server, GPU hay model weights. Nhưng nó CÓ cần
+vài thư viện ngoài stdlib, và opencv là một trong số đó: selftest import
+TrafficLightTemporalVoter, và modules/traffic_light.py import cv2 ngay ở đầu
+file. Header cũ ghi "KHÔNG import ... cv2" — sai, và workflow CI vẫn phải cài
+opencv-python-headless mới chạy được.
+
+Danh sách đầy đủ nằm ở requirements-selftest.txt (numpy, opencv-python-headless,
+pyyaml, scikit-learn, pillow) và là đúng bộ mà CI cài. Thiếu package là lỗi
+MÔI TRƯỜNG, không phải bằng chứng thuật toán sai.
 """
 import os
 import sys
@@ -26,7 +36,8 @@ from active_safety import ActiveSafetySystem    # noqa: E402
 from mot_tracker import MultiObjectTracker      # noqa: E402
 from kpi import KpiRecorder                      # noqa: E402
 from friction import stopping_distance          # noqa: E402
-from weather_model import estimate_conditions   # noqa: E402
+from weather_model import (estimate_conditions, weather_params,  # noqa: E402
+                           conditions_from)
 from weather_config import load_weather_profiles  # noqa: E402
 from odd_monitor import ODDMonitor              # noqa: E402
 from mrm_controller import L3StateMachine       # noqa: E402
@@ -569,6 +580,14 @@ check("env.reset -> obs 5 chieu", len(obs0) == 5)
 check("env.step -> (obs, reward, done, info)",
       len(o1) == 5 and isinstance(r1, float) and isinstance(d1, bool) and "v_kmh" in i1)
 
+# Hai hang so an toan doc THANG tu config.py de bao dam mac dinh KHOP, khong
+# hardcode lai o day (neu hardcode thi phep thu chi so sanh hai ban sao cua cung
+# mot con so va se khong phat hien duoc khi config va code lech nhau).
+# config.py chi import math/os, khong keo theo carla -> selftest van chay offline.
+import config as _cfg_mod  # noqa: E402
+cfg_evade_commit = _cfg_mod.EVADE_COMMIT_S
+cfg_brake_exit = _cfg_mod.BRAKE_EXIT_FACTOR
+
 # Controller: khong co torch/policy trong base python -> tu dong dung heuristic
 ctrl = RLSpeedController("weights/_khong_ton_tai.pt")
 check("chua co policy -> heuristic", ctrl.policy is None)
@@ -595,6 +614,71 @@ check("san mac dinh 0 -> khong doi hanh vi cu",
           - ctrl.desired_speed_kmh(5.0, 0.9, 10.0, 2.0, min_cruise_kmh=0.0)) < 1e-9)
 check("safety_cap_kmh la API cong khai, khong vat can -> vo cuc",
       RLSpeedController.safety_cap_kmh(None, None) == float("inf"))
+
+# --- F01: san/EMA khong duoc vuot tran, ke ca cac bien the xau nhat ---
+# Tran = 0 (vat can sat suon): san 18 km/h KHONG duoc nang len.
+check("cap = 0 -> lenh = 0 du co san 18",
+      ctrl.desired_speed_kmh(5.0, 0.1, 5.0, 0.1, min_cruise_kmh=18.0)
+      <= RLSpeedController.safety_cap_kmh(5.0, 0.1) + 1e-9)
+# chinh.py lam muot bang EMA moi 5 khung nhung kep tran MOI khung. Tai dung lai
+# phep ghep do: gia tri EMA cu cao, tran hien tai thap -> tran thang.
+_ema_stale = 40.0
+_cap_now = RLSpeedController.safety_cap_kmh(8.0, 3.0)
+check("EMA cu cao + tran moi thap -> tran thang",
+      min(_ema_stale, _cap_now) <= _cap_now + 1e-9 and min(_ema_stale, _cap_now) < _ema_stale)
+check("policy khong nap duoc -> heuristic van bi tran kep",
+      ctrl.policy is None and
+      ctrl.desired_speed_kmh(5.0, 0.1, 8.0, 3.0, min_cruise_kmh=18.0) <= _cap_now + 1e-9)
+
+# --- F02: thoi tiet phai den tu nguon THAT, khong phai mac dinh kho ---
+class _WorldWeather:  # giong carla.WeatherParameters o 4 truong can dung
+    precipitation = 90.0
+    fog_density = 60.0
+    wetness = 80.0
+    precipitation_deposits = 70.0
+
+
+_wet = conditions_from(_WorldWeather())
+_dry_default = conditions_from(None)
+check("weather_params doc duoc tu object kieu carla",
+      weather_params(_WorldWeather())["precipitation"] == 90.0)
+check("weather_params doc duoc tu dict ho so",
+      weather_params({"wetness": 50.0})["wetness"] == 50.0)
+check("truong thieu -> 0.0, khong nem loi",
+      weather_params({"precipitation": "khong-phai-so"})["precipitation"] == 0.0)
+check("world dang mua -> mu THAP hon mac dinh kho",
+      _wet["mu"] < _dry_default["mu"] - 0.2)
+check("world dang mua -> tam nhin giam",
+      _wet["visibility_m"] < _dry_default["visibility_m"])
+check("mac dinh kho chi dung khi KHONG co nguon nao",
+      abs(_dry_default["mu"] - estimate_conditions(0, 0, 0, 0)["mu"]) < 1e-9)
+
+# --- F02: gap_multiplier cua ODD phai toi duoc lop an toan ---
+# 15 m/s, mu 0.8: brake_dist ~29.3 m -> dyn_safe = 35.3 (gap 1.0) / 64.7 (gap 2.0).
+# Vat can 50 m nam GIUA hai nguong: chi canh bao khi ODD da noi vung an toan.
+_s_normal = ActiveSafetySystem(enable_evasion=False)
+_s_normal.set_conditions(0.8, 1.0)
+_d_normal = _s_normal.update(15.0, [], [obs(50.0, 0.0)], dt)
+_s_degraded = ActiveSafetySystem(enable_evasion=False)
+_s_degraded.set_conditions(0.8, 2.0)
+_d_degraded = _s_degraded.update(15.0, [], [obs(50.0, 0.0)], dt)
+check("gap 1.0: vat can 50m chua canh bao", _d_normal.state == "NORMAL")
+check("gap 2.0: cung canh do -> da canh bao (vung an toan noi ra)",
+      _d_degraded.state != "NORMAL")
+
+# --- F10: hai hang so an toan qua config, co kiem tra dau vao ---
+check("mac dinh khop config (hanh vi khong doi)",
+      abs(ActiveSafetySystem().evade_commit_s - cfg_evade_commit) < 1e-9 and
+      abs(ActiveSafetySystem().brake_exit_factor - cfg_brake_exit) < 1e-9)
+check("doi duoc qua tham so",
+      abs(ActiveSafetySystem(evade_commit_s=2.5).evade_commit_s - 2.5) < 1e-9)
+_rejected = 0
+for _bad in ({"brake_exit_factor": 0.9}, {"evade_commit_s": -1.0}):
+    try:
+        ActiveSafetySystem(**_bad)
+    except ValueError:
+        _rejected += 1
+check("gia tri vo nghia bi tu choi ro rang (khong im lang nhan)", _rejected == 2)
 
 # Turn intent
 check("intent_to_right('right') True", intent_to_right("right") is True)

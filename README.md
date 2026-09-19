@@ -9,7 +9,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![YOLO](https://img.shields.io/badge/Ultralytics-YOLOv8%2Fv10-00B5B8)](https://github.com/ultralytics/ultralytics)
 [![CI](https://github.com/nhatduongchess-cloud/carla-adas-active-safety-project/actions/workflows/selftest.yml/badge.svg)](https://github.com/nhatduongchess-cloud/carla-adas-active-safety-project/actions/workflows/selftest.yml)
-[![Self-test](https://img.shields.io/badge/self--test-190%20checks-brightgreen)](selftest.py)
+[![Self-test](https://img.shields.io/badge/self--test-204%20checks-brightgreen)](selftest.py)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
@@ -47,13 +47,13 @@
 
 ## Highlights
 
-- **Geometry-first active safety** — the AEB decision is a metric LiDAR **swept path** aligned to the waypoint centerline, so the car brakes for *any* in-path obstacle regardless of detector class (cones, debris, vehicles). A missed or late detection cannot cause a missed brake.
-- **Committed safety arbiter** — a finite-state machine (`NORMAL → FOLLOW → EVADE → EMERGENCY_BRAKE`) with hysteresis and brake-as-fallback that removed brake↔evade oscillation and never creeps into a stationary obstacle.
+- **Geometry-first active safety** — the AEB decision is a metric LiDAR **swept path** aligned to the waypoint centerline, so the car brakes for *any* in-path obstacle regardless of detector class (cones, debris, vehicles). Precisely: a detector miss or misclassification cannot *by itself* suppress a brake, because the trigger never reads detector output. It is not a guarantee that a brake is never missed — the geometric path still depends on valid LiDAR/radar returns, sensor synchronisation, visibility and the corridor geometry, and each of those can fail on its own.
+- **Committed safety arbiter** — a finite-state machine with hysteresis and brake-as-fallback that removed brake↔evade oscillation and never creeps into a stationary obstacle. The diagram below shows the main path; the implementation also emits `BRAKE_HOLD` and `BRAKE_TO_STOP`, and the complete machine is in [`docs/ARCHITECTURE.md` §7.3](docs/ARCHITECTURE.md#73-the-committed-state-machine).
 - **Multi-sensor fusion** — YOLO semantics + LiDAR position + front-radar range/radial velocity, with 6-DoF extrinsics, one-to-one association and Mahalanobis track updates; ego-motion-compensated Kalman tracking.
 - **Audited learned lane with deterministic fallback** — UFLDv2 (Tusimple, ResNet18) via a hash-pinned, weights-only local backend, gated by confidence/width/jump checks with junction priority and a CARLA-map fallback.
-- **L3-style ODD / MRM layer** — an ODD monitor (`NORMAL / DEGRADED / VIOLATION`) and a `TOR → MRM → SAFE_STOP` state machine, with a friction/stopping-distance model and rain-aware fusion weighting.
+- **L3-style ODD / MRM layer** — an ODD monitor (`NORMAL / DEGRADED / VIOLATION`) and a `TOR → MRM → SAFE_STOP` state machine, with a friction/stopping-distance model and rain-aware fusion weighting. "L3-style" means the *logic shape* of an SAE Level 3 fallback, simulated; it is not a Level 3 qualification, and friction/visibility are **modelled estimates** from CARLA weather parameters, not physical measurements.
 - **Safety-capped RL cruise** — a lightweight DQN sets desired speed from traffic density but can *only* propose cruise speed; AEB/MRM always override.
-- **Reproducible, CARLA-free verification** — `selftest.py` exercises the geometry + safety math in **190 checks** with no simulator running, so the safety logic is testable in CI.
+- **Reproducible, CARLA-free verification** — `selftest.py` exercises the geometry + safety math in **204 checks** with no simulator running, so the safety logic is testable in CI.
 - **Fail-closed runtime** — the pipeline reports success only after teardown is *verified* (owned actors removed, world settings restored, async progress confirmed); a failed or timed-out cleanup fails the run and its exit code.
 
 ## Scope & status
@@ -61,9 +61,9 @@
 This is a **portfolio project**, scoped to demonstrate ADAS fundamentals honestly rather than to certify a production system.
 
 **Demonstrated / working:**
-- The full perception → fusion → safety → control loop in CARLA, driven by the custom planner/controller (Traffic Manager is a runtime fallback).
+- The full perception → fusion → safety → control loop in CARLA, driven by the custom planner/controller. Traffic Manager is an **opt-in** driving mode, not a fault handler: if the custom stack raises, the runtime latches `custom_fault_safe_stop`, brakes manually with hazards and explicitly does **not** hand the vehicle to autopilot (`modules/ego_control.py`).
 - Committed AEB/evasion arbiter, radar ground-plane rejection, sensor fusion + tracking, learned-lane/map arbiter, ODD/MRM layer, RL cruise under a safety cap.
-- 190 CARLA-free self-test checks and an extensive unit-test suite (controller, safety, radar, junction, neural scheduling, dataset labels).
+- 204 CARLA-free self-test checks and an extensive unit-test suite (controller, safety, radar, junction, neural scheduling, dataset labels).
 - A curated, seeded scenario harness for AEB/avoidance verification.
 
 **In progress / future work** (see [Roadmap](#roadmap--future-work)): custom 8-class detector accuracy, a full 20k-frame dataset, the complete scenario × weather × fault matrix and soak, and native-engine stability on this custom build (see [Known limitations](#known-limitations)).
@@ -75,7 +75,7 @@ This is a **portfolio project**, scoped to demonstrate ADAS fundamentals honestl
 ```mermaid
 flowchart LR
     subgraph SIM["CARLA server (synchronous, fixed Δt)"]
-        TM["Traffic Manager<br/>(runtime fallback)"]
+        TM["Traffic Manager<br/>(opt-in driving mode)"]
         SENS["RGB camera + LiDAR + radar"]
     end
 
@@ -96,7 +96,7 @@ flowchart LR
     SAFE -->|"brake / target speed / lane-change"| ACT["Custom route + local planner<br/>pure-pursuit + longitudinal PID"]
     SEM --> ACT
     ODD -->|"minimal-risk maneuver"| ACT
-    ACT -.->|"fallback on controller error"| TM
+    ACT -.->|"controller error -> latched safe stop,<br/>NOT handed to TM"| STOP["Manual safe stop<br/>brake 1.0 + hazards"]
     ACT --> HUD["HUD + telemetry + BEV"]
 ```
 
@@ -114,10 +114,17 @@ stateDiagram-v2
     FOLLOW --> EMERGENCY_BRAKE: TTC < critical
     NORMAL --> EMERGENCY_BRAKE: in-corridor obstacle<br/>TTC < critical
     EVADE --> EMERGENCY_BRAKE: evasion unsafe<br/>(fallback)
-    EMERGENCY_BRAKE --> NORMAL: hazard cleared<br/>(+ hysteresis)
+    EMERGENCY_BRAKE --> BRAKE_HOLD: latched,<br/>no longer critical
+    BRAKE_HOLD --> EMERGENCY_BRAKE: critical again
+    BRAKE_HOLD --> NORMAL: cleared<br/>(+ 1.4x hysteresis)
+    FOLLOW --> BRAKE_TO_STOP: must act,<br/>no evade available
+    BRAKE_TO_STOP --> NORMAL: cleared
     FOLLOW --> NORMAL: gap restored
     EVADE --> NORMAL: lane change complete
 ```
+
+`EVADE` is `EVADE_LEFT` / `EVADE_RIGHT` in code. Full transition table, constants
+and abort conditions: [`docs/ARCHITECTURE.md` §7.3](docs/ARCHITECTURE.md#73-the-committed-state-machine).
 
 ## Features
 
@@ -139,20 +146,28 @@ stateDiagram-v2
 
 ### Scenario harness — curated AEB/avoidance suite (earlier ground-filter build)
 
-Measured on an RTX 4070 Laptop with the radar-ground-filter code, before the current native-stability investigation. Reproduce with `run_scenarios.py`.
+Measured 2026-09-01 on an RTX 4070 Laptop with the radar-ground-filter code, before the current native-stability investigation. **The reports are published** at [`docs/benchmarks/`](docs/benchmarks/) — they were previously only in the git-ignored `logs/`, so these figures could not be checked from the repository. Reproduce with `run_scenarios.py`.
 
-| Check | Observed | Target | Result |
-|---|---:|---:|:---:|
-| Curated core catalog, Town02 seed 42 | 6/6 | 6/6 | ✅ |
-| Full catalog, Town02, 15 scenarios × 3 seeds | 45/45 | ≥43/45 | ✅ |
-| Core weather matrix, 6 scenarios × 5 profiles | 30/30 | 30/30 | ✅ |
-| Left/right cut-in, 2 scenarios × 3 seeds | 6/6 | 6/6 | ✅ |
-| Collisions / camera–LiDAR frame errors | 0 / 0 | 0 / 0 | ✅ |
-| Max reaction delay / min GT clearance | 0.875 s / 4.04 m | ≤1.0 s / ≥0.25 m | ✅ |
+| Check | Observed | Target | Result | Artifact |
+|---|---:|---:|:---:|---|
+| Full catalog, Town02, 15 scenarios × 3 seeds | 45/45 | ≥43/45 | ✅ | [`catalog_clear_3seed_final_report.json`](docs/benchmarks/catalog_clear_3seed_final_report.json) |
+| Core weather matrix, 6 scenarios × 5 profiles | 30/30 | 30/30 | ✅ | [`core_5weather_report.json`](docs/benchmarks/core_5weather_report.json) |
+| Core suite, Town02, 3 seeds | 18/18 | 18/18 | ✅ | [`core_clear_3seed_report.json`](docs/benchmarks/core_clear_3seed_report.json) |
+| Collisions / camera–LiDAR frame errors | 0 / 0 | 0 / 0 | ✅ | all three above |
+| Max reaction delay / min GT clearance | 0.875 s / 4.04 m | ≤1.0 s / ≥0.25 m | ✅ | all three above |
+
+> **Scope of these numbers.** They are evidence that the suite passed **on the
+> build of 2026-09-01**, not a claim about the current commit: those reports
+> predate the `meta` block the harness now embeds, so they carry no commit SHA or
+> CARLA build inside the file. Re-running on HEAD needs a CARLA server and has not
+> been done — status **unverified on HEAD**. The older
+> [`docs/scenario_baseline_report.json`](docs/scenario_baseline_report.json)
+> (2026-08-04, 2/3 pass, 18 collision events) is kept deliberately as the
+> before-picture; it is superseded, not hidden.
 
 ### CARLA-free self-test
 
-`selftest.py` → **190 checks / 0 failures**, run in CI on every push. Covers LiDAR→image projection, distance fusion, ego-motion tracking, TTC/safe-distance math, VRU/traffic semantics, planning/control, safety-FSM transitions, ODD/MRM, radar ground rejection/sign, and dataset gates. The offline unit-test suite adds **280 tests, all passing**.
+`selftest.py` → **204 checks / 0 failures**, run in CI on every push. Covers LiDAR→image projection, distance fusion, ego-motion tracking, TTC/safe-distance math, VRU/traffic semantics, planning/control, safety-FSM transitions, ODD/MRM, radar ground rejection/sign, and dataset gates. The unit-test suite adds **284 tests, all passing** (observed 2026-09-19 on the development machine, `python -m unittest discover -p "test_*.py"`). Of those, **189 need no CARLA client** and now run in CI on every push; the remaining six modules import the CARLA client and stay local.
 
 ### Live demo run — current stable envelope (2026-09-12)
 
@@ -163,9 +178,23 @@ A clear-road drive on the current custom build, in the stable envelope (Town02, 
 | Distance driven | 121.5 m |
 | Max speed | 35.8 km/h |
 | Collisions | 0 |
-| Frames captured | 887 (~22 s simulated) |
+| Frames captured | 887 (~22 s simulated, target 30 s) |
+| Frames commanding BRAKE | 310 of 887 (AEB active) |
+| Run status in the report | **`FAIL`** |
+| Teardown | **not verified** — ten `actor.destroy` steps failed, the rest unknown after the 20 s budget |
+| Latency criteria | `safety_p99 ≤ 25 ms`, `perception_p95 ≤ 50 ms`, `inference_age_p95 ≤ 150 ms` — all three **not met** |
 
-The custom controller tracked the route and held speed with zero collisions. The run ended when the native engine fault (**B01**) fired at ~22 s — see [Known limitations](#known-limitations); the driving up to that point was clean. Report: `logs/demo_clear.json`.
+The custom controller tracked the route and reached the end location with zero
+collisions, and the safety layer was doing real work: AEB commanded braking on
+about a third of the frames. The run nevertheless **reports `FAIL`**, and that is
+the honest headline: it ended early on the native engine fault (**B01**, see
+[Known limitations](#known-limitations)), its teardown could not be verified, and
+three latency criteria were missed. A clean drive with an unverified exit is a
+failed run by this project's own rule — quoting the 121.5 m without the status
+field would be quoting half a report.
+
+Full artifact: [`docs/benchmarks/demo_clear.json`](docs/benchmarks/demo_clear.json),
+with a field-by-field reading in [`docs/benchmarks/README.md`](docs/benchmarks/README.md).
 
 **AEB and L3-MRM behaviour** are evidenced by the demo video clips plus the seeded scenario suite (`StationaryObjectCrossing`, `ConstructionObstacle`, `DynamicObjectCrossing`) and the `selftest.py` safety-FSM / ODD-MRM checks. A standalone live JSON report for those two clips was not reliably capturable: B01 is intermittent and can terminate a capture run before the report is written — itself a documented symptom of the limitation, not a gap in the behaviour.
 
@@ -195,7 +224,7 @@ Honesty about limits is part of the engineering.
 Self-Driving-Perception/
 ├── chinh.py                 # Thin orchestrator — wires modules, owns lifecycle & fail-closed teardown
 ├── config.py                # Single source of truth: sensor geometry + safety thresholds
-├── selftest.py              # CARLA-free self-test of geometry/control/safety (190 checks)
+├── selftest.py              # CARLA-free self-test of geometry/control/safety (204 checks)
 ├── run_scenarios.py         # Seeded ScenarioRunner-style AEB/avoidance harness → JSON report
 ├── evaluate_l3.py           # Weather-profile L3 evaluation → JSON report
 ├── collect_carla_dataset.py # Resumable CARLA capture (schema4) for the data-story sample
@@ -214,40 +243,92 @@ Self-Driving-Perception/
 - **NVIDIA GPU with CUDA** for real-time inference (developed on an RTX 4070 Laptop). CPU works but is slower.
 
 ### Install
-```bash
-git clone <your-repo-url>
-cd Self-Driving-Perception
-python -m venv .venv && .venv\Scripts\activate      # Windows
-pip install -r requirements.txt
-pip install carla==0.9.15                            # match your server
+Verified configuration: **Windows 11 + PowerShell + Python 3.12 + CARLA 0.9.15**.
+Other CARLA versions are listed above because the client API is compatible in
+principle; they are **unverified here** — the wheel/client/server matrix has not
+been tested for them.
+
+```powershell
+git clone https://github.com/nhatduongchess-cloud/carla-adas-active-safety-project.git
+cd carla-adas-active-safety-project
+py -3.12 -m venv .venvCarLa
+.\.venvCarLa\Scripts\Activate.ps1
+.\.venvCarLa\Scripts\python.exe -m pip install --upgrade pip
+.\.venvCarLa\Scripts\python.exe -m pip install -r requirements.txt
+.\.venvCarLa\Scripts\python.exe -m pip install carla==0.9.15   # must match the server
 ```
-Detector weights (`yolov8n.pt`) are pretrained COCO and auto-fetched by Ultralytics on first use. The trained DQN cruise policy ships in `weights/`, so the pipeline runs out of the box.
+
+Everything below uses `.\.venvCarLa\Scripts\python.exe` explicitly rather than a
+bare `python`, so the commands work whether or not the environment is activated.
+For offline verification only, a much smaller set is enough and needs no CARLA
+wheel: `python -m pip install -r requirements-selftest.txt`.
+#### Detector weights — prepare them before the first run
+
+Ultralytics *can* auto-download `yolov8n.pt`, but **this runtime forbids it**:
+`modules/object_tracking.py` requires the file to exist locally, hashes it for the
+provenance record, and if it is missing prints
+`model weight missing; auto-download disabled` and continues **LiDAR-only**. That
+degraded mode is reported in the log, the HUD threat source and the run report — it
+is not a detector working silently, and geometry-only operation is not evidence of
+working perception.
+
+Fetch the pretrained COCO weight once, into the repository root (the path
+`config.YOLO_MODEL_A` points at):
+
+```powershell
+python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"   # downloads to CWD
+```
+
+The trained DQN cruise policy is committed at `weights/rl_speed_policy.pt`, so no
+preparation is needed for it; if it is absent the controller falls back to a density
+heuristic and says so.
 
 ### Run (stable demo envelope)
 ```bash
 # Terminal 1 — CARLA server, Low quality / 640×360
 launch_carla.bat
 
-# Terminal 2 — the ADAS pipeline
-.\.venvCarLa\Scripts\python.exe -u chinh.py --town Town02 \
+# Terminal 2 — the ADAS pipeline (PowerShell; ` is the line continuation)
+.\.venvCarLa\Scripts\python.exe -u chinh.py --town Town02 `
   --performance-profile low-memory --runtime-mode async-stable
-python chinh.py --hazard         # spawn a stationary obstacle ahead (AEB demo)
-python chinh.py --weather light_rain
-python chinh.py --driver-takeover   # simulate an L3 takeover request
+
+.\.venvCarLa\Scripts\python.exe chinh.py --hazard          # stationary obstacle ahead (AEB demo)
+.\.venvCarLa\Scripts\python.exe chinh.py --weather light_rain
+.\.venvCarLa\Scripts\python.exe chinh.py --driver-takeover # simulate an L3 takeover request
 ```
 
 ## Testing
 
+No CARLA, no GPU, no weights required:
+
 ```bash
-python selftest.py                 # 190 CARLA-free checks
+python -m pip install -r requirements-selftest.txt
+python selftest.py                 # 204 checks
+python -m unittest test_safety_geometry test_sensor_sync test_runtime_cleanup \
+  test_runtime_report test_perception_contracts test_decision_trace \
+  test_pipeline_metrics test_inference_telemetry test_neural_decoupling \
+  test_runtime_config test_dataset_labels test_validate_dataset \
+  test_audit_training_dataset test_image_quality test_launch_carla \
+  test_carla_probe                 # 189 tests
+ruff check .
+mypy
+```
+
+Requires a running CARLA server:
+
+```bash
 python run_scenarios.py            # curated seeded core suite → logs/scenario_test_report.json
 python run_scenarios.py --scenarios core --weathers clear,light_rain,heavy_rain,fog,storm
+python -m unittest test_ego_control test_junction_route test_road_waypoints \
+  test_sensor_runtime test_capture_lifecycle test_dataset_capture
 ```
-A GitHub Actions workflow runs `selftest.py` on every push.
+
+GitHub Actions runs four gates on every push: ruff, mypy, `selftest.py`, and the
+189-test offline group. The six CARLA-client modules stay local by necessity.
 
 ## Engineering notes & design decisions
 
-- **Geometry over classification for braking.** The AEB trigger is a metric LiDAR swept path, not a detector confidence — a missed box cannot cause a missed brake.
+- **Geometry over classification for braking.** The AEB trigger is a metric LiDAR swept path, not a detector confidence — a missed box cannot *by itself* cause a missed brake. Range sensing, synchronisation and corridor geometry remain in the path and can still fail.
 - **Path-aware safety.** Obstacles are projected onto the upcoming waypoint polyline, not a fixed rectangle, reducing curve misses and off-path false positives.
 - **Radar ground-plane rejection.** Radar hits are transformed to the ego frame and rejected below a configurable height before clustering — removing the 9–10 m ray/road false AEB without discarding vehicle returns.
 - **Committed arbiter + hysteresis.** A committed decision with brake-as-fallback replaced frame-to-frame brake↔evade oscillation.
