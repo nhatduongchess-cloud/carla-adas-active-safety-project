@@ -1,0 +1,2269 @@
+{
+  "title": "CARLA ScenarioRunner Port — AEB/Avoidance Test Report",
+  "generated_at": "2026-09-19T11:04:38",
+  "acceptance_criteria": {
+    "scenario_triggered": "== true",
+    "collisions": "== 0",
+    "reacted": "== true after trigger",
+    "reaction_delay_s": "<= 1.0",
+    "min_clearance_m": ">= 0.25 when measurable",
+    "sensor_frame_errors": "== 0",
+    "cutin": "must command BRAKE or EVADE"
+  },
+  "summary": {
+    "scenarios": 9,
+    "passed": 3,
+    "failed": 6,
+    "pass_rate_pct": 33.3
+  },
+  "scenarios": [
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "aeb_triggered": true,
+      "evaded": false,
+      "min_distance_m": 7.08,
+      "scenario_min_clearance_m": 5.0,
+      "min_ttc_s": 0.25,
+      "max_decel_ms2": 6.37,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 7.08,
+        "min_ttc_s": 0.25,
+        "max_decel_ms2": 6.37,
+        "max_jerk_ms3": 55.69,
+        "impact_decel_spikes": 8,
+        "pipeline_latency_p50_ms": 26.78,
+        "pipeline_latency_p95_ms": 41.48,
+        "pipeline_latency_p99_ms": 71.64,
+        "safety_latency_p99_ms": 11.33,
+        "perception_latency_p95_ms": 120.8,
+        "inference_age_p95_ms": 141.0,
+        "gpu_memory_peak_mb": null,
+        "sensor_availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "mean_speed_kmh": 24.6,
+        "max_speed_kmh": 29.5,
+        "pct_time_state": {
+          "NORMAL": 84.4,
+          "EMERGENCY_BRAKE": 3.5,
+          "BRAKE_HOLD": 12.1
+        },
+        "success": true
+      },
+      "triggered": true,
+      "trigger_frame": 0,
+      "hazard_frame": 0,
+      "first_reaction_frame": 12,
+      "reaction_delay_s": 0.30000000000000004,
+      "ttc_at_reaction_s": 0.75,
+      "distance_at_reaction_m": 9.91,
+      "source_at_reaction": "tracker",
+      "sensor_sync": {
+        "reads": 1718,
+        "wait_p50_ms": 0.34,
+        "wait_p95_ms": 28.53,
+        "wait_p99_ms": 43.77,
+        "stale_discarded": 0,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "sensor_frame_errors": 0,
+      "sensor_health": {
+        "frames": 800,
+        "availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "consecutive_misses": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "missing_counts": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "range_redundancy_lost": false,
+        "range_redundancy_ever_lost": false,
+        "range_redundancy_loss_events": 0
+      },
+      "radar_sync": {
+        "reads": 859,
+        "wait_p50_ms": 0.01,
+        "wait_p95_ms": 0.01,
+        "wait_p99_ms": 0.03,
+        "stale_discarded": 1,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "radar_availability": 1.0,
+      "radar_velocity_validated": true,
+      "weather": "clear",
+      "fault": "none",
+      "fault_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "criteria": {
+          "fault_observed": [],
+          "single_sensor_preserves_range_redundancy": true,
+          "dual_range_fault_requires_odd_mrm": false
+        }
+      },
+      "weather_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "expected": "NORMAL",
+        "observed": [
+          "NORMAL"
+        ],
+        "mrm_required": false,
+        "external_violation_expected": false
+      },
+      "odd_violation_seen": false,
+      "odd_states_seen": [
+        "NORMAL"
+      ],
+      "mrm_seen": false,
+      "seed": 42,
+      "last_control_status": {
+        "mode": "custom",
+        "behavior_state": "LANE_FOLLOWING",
+        "target_speed_kmh": 30.0,
+        "lane_change_side": null,
+        "turn_intent": null,
+        "stop_sign_pending": false,
+        "traffic_light_state": "green",
+        "path_points": 24,
+        "route_valid": true,
+        "route_road_id": 0
+      },
+      "stage_metrics": {
+        "stages": {
+          "control": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 0.382,
+            "p95_ms": 0.975,
+            "p99_ms": 2.231,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "safety_loop": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 3.712,
+            "p95_ms": 7.207,
+            "p99_ms": 11.334,
+            "deadline_ms": 25.0,
+            "deadline_misses": 1,
+            "window_deadline_misses": 1,
+            "deadline_miss_fraction": 0.00125,
+            "window_deadline_miss_fraction": 0.00125
+          },
+          "safety_geometry": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.437,
+            "p95_ms": 3.822,
+            "p99_ms": 6.557,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "tracking_safety": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.419,
+            "p95_ms": 2.528,
+            "p99_ms": 4.967,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "sensor_sync": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 22.731,
+            "p95_ms": 37.346,
+            "p99_ms": 66.579,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "perception": {
+            "samples": 72,
+            "total_samples": 72,
+            "invalid_samples": 0,
+            "p50_ms": 71.108,
+            "p95_ms": 120.797,
+            "p99_ms": 129.439,
+            "deadline_ms": 50.0,
+            "deadline_misses": 70,
+            "window_deadline_misses": 70,
+            "deadline_miss_fraction": 0.9722222222222222,
+            "window_deadline_miss_fraction": 0.9722222222222222
+          }
+        },
+        "inference_age_p95_ms": null,
+        "inference_age_total_samples": 0,
+        "inference_age_window_samples": 0,
+        "inference_age_invalid_samples": 0,
+        "gpu_peak_mb": null,
+        "gpu_device_peak_used_mb": null,
+        "gpu_device_total_mb": null,
+        "gpu_tensor_samples": 0,
+        "gpu_device_samples": 0,
+        "gpu_sampling_errors": 0,
+        "gpu_last_error": null,
+        "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak"
+      },
+      "criteria": {
+        "scenario_triggered": true,
+        "collisions": 0,
+        "max_reaction_s": 1.0,
+        "min_clearance_m": 0.25,
+        "sensor_frame_errors": 0,
+        "cutin_requires_brake_or_evade": false
+      },
+      "pass": true,
+      "reasons": []
+    },
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "aeb_triggered": true,
+      "evaded": false,
+      "min_distance_m": 4.22,
+      "scenario_min_clearance_m": 4.43,
+      "min_ttc_s": 0.31,
+      "max_decel_ms2": 6.46,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 4.22,
+        "min_ttc_s": 0.31,
+        "max_decel_ms2": 6.46,
+        "max_jerk_ms3": 59.85,
+        "impact_decel_spikes": 8,
+        "pipeline_latency_p50_ms": 25.88,
+        "pipeline_latency_p95_ms": 42.64,
+        "pipeline_latency_p99_ms": 75.66,
+        "safety_latency_p99_ms": 11.18,
+        "perception_latency_p95_ms": 123.92,
+        "inference_age_p95_ms": 141.0,
+        "gpu_memory_peak_mb": null,
+        "sensor_availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "mean_speed_kmh": 25.1,
+        "max_speed_kmh": 29.5,
+        "pct_time_state": {
+          "NORMAL": 86.5,
+          "EMERGENCY_BRAKE": 12.4,
+          "BRAKE_HOLD": 1.1
+        },
+        "success": true
+      },
+      "triggered": true,
+      "trigger_frame": 0,
+      "hazard_frame": 0,
+      "first_reaction_frame": 44,
+      "reaction_delay_s": 1.1,
+      "ttc_at_reaction_s": 1.14,
+      "distance_at_reaction_m": 9.25,
+      "source_at_reaction": "tracker",
+      "sensor_sync": {
+        "reads": 1718,
+        "wait_p50_ms": 0.46,
+        "wait_p95_ms": 26.79,
+        "wait_p99_ms": 42.46,
+        "stale_discarded": 0,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "sensor_frame_errors": 0,
+      "sensor_health": {
+        "frames": 800,
+        "availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "consecutive_misses": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "missing_counts": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "range_redundancy_lost": false,
+        "range_redundancy_ever_lost": false,
+        "range_redundancy_loss_events": 0
+      },
+      "radar_sync": {
+        "reads": 859,
+        "wait_p50_ms": 0.01,
+        "wait_p95_ms": 0.01,
+        "wait_p99_ms": 0.01,
+        "stale_discarded": 1,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "radar_availability": 1.0,
+      "radar_velocity_validated": true,
+      "weather": "light_rain",
+      "fault": "none",
+      "fault_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "criteria": {
+          "fault_observed": [],
+          "single_sensor_preserves_range_redundancy": true,
+          "dual_range_fault_requires_odd_mrm": false
+        }
+      },
+      "weather_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "expected": "NORMAL",
+        "observed": [
+          "NORMAL"
+        ],
+        "mrm_required": false,
+        "external_violation_expected": false
+      },
+      "odd_violation_seen": false,
+      "odd_states_seen": [
+        "NORMAL"
+      ],
+      "mrm_seen": false,
+      "seed": 42,
+      "last_control_status": {
+        "mode": "custom",
+        "behavior_state": "LANE_FOLLOWING",
+        "target_speed_kmh": 30.0,
+        "lane_change_side": null,
+        "turn_intent": null,
+        "stop_sign_pending": false,
+        "traffic_light_state": "green",
+        "path_points": 24,
+        "route_valid": true,
+        "route_road_id": 0
+      },
+      "stage_metrics": {
+        "stages": {
+          "control": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 0.406,
+            "p95_ms": 0.893,
+            "p99_ms": 1.387,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "safety_loop": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 3.645,
+            "p95_ms": 6.266,
+            "p99_ms": 11.178,
+            "deadline_ms": 25.0,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": 0.0,
+            "window_deadline_miss_fraction": 0.0
+          },
+          "safety_geometry": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.441,
+            "p95_ms": 3.039,
+            "p99_ms": 5.327,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "tracking_safety": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.407,
+            "p95_ms": 2.206,
+            "p99_ms": 4.441,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "sensor_sync": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 22.192,
+            "p95_ms": 37.755,
+            "p99_ms": 70.685,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "perception": {
+            "samples": 28,
+            "total_samples": 28,
+            "invalid_samples": 0,
+            "p50_ms": 107.22,
+            "p95_ms": 123.922,
+            "p99_ms": 127.428,
+            "deadline_ms": 50.0,
+            "deadline_misses": 28,
+            "window_deadline_misses": 28,
+            "deadline_miss_fraction": 1.0,
+            "window_deadline_miss_fraction": 1.0
+          }
+        },
+        "inference_age_p95_ms": null,
+        "inference_age_total_samples": 0,
+        "inference_age_window_samples": 0,
+        "inference_age_invalid_samples": 0,
+        "gpu_peak_mb": null,
+        "gpu_device_peak_used_mb": null,
+        "gpu_device_total_mb": null,
+        "gpu_tensor_samples": 0,
+        "gpu_device_samples": 0,
+        "gpu_sampling_errors": 0,
+        "gpu_last_error": null,
+        "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak"
+      },
+      "criteria": {
+        "scenario_triggered": true,
+        "collisions": 0,
+        "max_reaction_s": 1.0,
+        "min_clearance_m": 0.25,
+        "sensor_frame_errors": 0,
+        "cutin_requires_brake_or_evade": false
+      },
+      "pass": false,
+      "reasons": [
+        "phản ứng trễ 1.10s > 1.00s"
+      ]
+    },
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "aeb_triggered": true,
+      "evaded": false,
+      "min_distance_m": 3.21,
+      "scenario_min_clearance_m": 4.26,
+      "min_ttc_s": 0.27,
+      "max_decel_ms2": 7.85,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 3.21,
+        "min_ttc_s": 0.27,
+        "max_decel_ms2": 7.85,
+        "max_jerk_ms3": 54.59,
+        "impact_decel_spikes": 8,
+        "pipeline_latency_p50_ms": 26.73,
+        "pipeline_latency_p95_ms": 41.65,
+        "pipeline_latency_p99_ms": 86.22,
+        "safety_latency_p99_ms": 9.51,
+        "perception_latency_p95_ms": 126.79,
+        "inference_age_p95_ms": 141.0,
+        "gpu_memory_peak_mb": null,
+        "sensor_availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "mean_speed_kmh": 25.2,
+        "max_speed_kmh": 29.5,
+        "pct_time_state": {
+          "NORMAL": 87.0,
+          "EMERGENCY_BRAKE": 12.1,
+          "BRAKE_HOLD": 0.9
+        },
+        "success": true
+      },
+      "triggered": true,
+      "trigger_frame": 0,
+      "hazard_frame": 0,
+      "first_reaction_frame": 49,
+      "reaction_delay_s": 1.225,
+      "ttc_at_reaction_s": 0.99,
+      "distance_at_reaction_m": 8.23,
+      "source_at_reaction": "radar",
+      "sensor_sync": {
+        "reads": 1718,
+        "wait_p50_ms": 0.51,
+        "wait_p95_ms": 27.68,
+        "wait_p99_ms": 45.82,
+        "stale_discarded": 0,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "sensor_frame_errors": 0,
+      "sensor_health": {
+        "frames": 800,
+        "availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "consecutive_misses": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "missing_counts": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "range_redundancy_lost": false,
+        "range_redundancy_ever_lost": false,
+        "range_redundancy_loss_events": 0
+      },
+      "radar_sync": {
+        "reads": 859,
+        "wait_p50_ms": 0.01,
+        "wait_p95_ms": 0.01,
+        "wait_p99_ms": 0.01,
+        "stale_discarded": 1,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "radar_availability": 1.0,
+      "radar_velocity_validated": true,
+      "weather": "heavy_rain",
+      "fault": "none",
+      "fault_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "criteria": {
+          "fault_observed": [],
+          "single_sensor_preserves_range_redundancy": true,
+          "dual_range_fault_requires_odd_mrm": false
+        }
+      },
+      "weather_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "expected": "DEGRADED",
+        "observed": [
+          "DEGRADED"
+        ],
+        "mrm_required": false,
+        "external_violation_expected": false
+      },
+      "odd_violation_seen": false,
+      "odd_states_seen": [
+        "DEGRADED"
+      ],
+      "mrm_seen": false,
+      "seed": 42,
+      "last_control_status": {
+        "mode": "custom",
+        "behavior_state": "LANE_FOLLOWING",
+        "target_speed_kmh": 30.0,
+        "lane_change_side": null,
+        "turn_intent": null,
+        "stop_sign_pending": false,
+        "traffic_light_state": "green",
+        "path_points": 24,
+        "route_valid": true,
+        "route_road_id": 0
+      },
+      "stage_metrics": {
+        "stages": {
+          "control": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 0.427,
+            "p95_ms": 0.876,
+            "p99_ms": 1.649,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "safety_loop": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 3.676,
+            "p95_ms": 6.169,
+            "p99_ms": 9.509,
+            "deadline_ms": 25.0,
+            "deadline_misses": 3,
+            "window_deadline_misses": 3,
+            "deadline_miss_fraction": 0.00375,
+            "window_deadline_miss_fraction": 0.00375
+          },
+          "safety_geometry": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.487,
+            "p95_ms": 3.077,
+            "p99_ms": 4.575,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "tracking_safety": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.415,
+            "p95_ms": 2.184,
+            "p99_ms": 3.366,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "sensor_sync": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 22.897,
+            "p95_ms": 36.496,
+            "p99_ms": 78.761,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "perception": {
+            "samples": 20,
+            "total_samples": 20,
+            "invalid_samples": 0,
+            "p50_ms": 111.004,
+            "p95_ms": 126.789,
+            "p99_ms": 127.578,
+            "deadline_ms": 50.0,
+            "deadline_misses": 20,
+            "window_deadline_misses": 20,
+            "deadline_miss_fraction": 1.0,
+            "window_deadline_miss_fraction": 1.0
+          }
+        },
+        "inference_age_p95_ms": null,
+        "inference_age_total_samples": 0,
+        "inference_age_window_samples": 0,
+        "inference_age_invalid_samples": 0,
+        "gpu_peak_mb": null,
+        "gpu_device_peak_used_mb": null,
+        "gpu_device_total_mb": null,
+        "gpu_tensor_samples": 0,
+        "gpu_device_samples": 0,
+        "gpu_sampling_errors": 0,
+        "gpu_last_error": null,
+        "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak"
+      },
+      "criteria": {
+        "scenario_triggered": true,
+        "collisions": 0,
+        "max_reaction_s": 1.0,
+        "min_clearance_m": 0.25,
+        "sensor_frame_errors": 0,
+        "cutin_requires_brake_or_evade": false
+      },
+      "pass": false,
+      "reasons": [
+        "phản ứng trễ 1.23s > 1.00s"
+      ]
+    },
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "aeb_triggered": true,
+      "evaded": false,
+      "min_distance_m": 3.21,
+      "scenario_min_clearance_m": 4.26,
+      "min_ttc_s": 0.22,
+      "max_decel_ms2": 7.89,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 3.21,
+        "min_ttc_s": 0.22,
+        "max_decel_ms2": 7.89,
+        "max_jerk_ms3": 56.13,
+        "impact_decel_spikes": 8,
+        "pipeline_latency_p50_ms": 26.05,
+        "pipeline_latency_p95_ms": 44.23,
+        "pipeline_latency_p99_ms": 84.17,
+        "safety_latency_p99_ms": 12.35,
+        "perception_latency_p95_ms": 124.9,
+        "inference_age_p95_ms": 141.0,
+        "gpu_memory_peak_mb": null,
+        "sensor_availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "mean_speed_kmh": 25.2,
+        "max_speed_kmh": 29.5,
+        "pct_time_state": {
+          "NORMAL": 87.0,
+          "EMERGENCY_BRAKE": 12.1,
+          "BRAKE_HOLD": 0.9
+        },
+        "success": true
+      },
+      "triggered": true,
+      "trigger_frame": 0,
+      "hazard_frame": 0,
+      "first_reaction_frame": 49,
+      "reaction_delay_s": 1.225,
+      "ttc_at_reaction_s": 0.99,
+      "distance_at_reaction_m": 8.24,
+      "source_at_reaction": "radar",
+      "sensor_sync": {
+        "reads": 1718,
+        "wait_p50_ms": 0.19,
+        "wait_p95_ms": 27.94,
+        "wait_p99_ms": 44.59,
+        "stale_discarded": 0,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "sensor_frame_errors": 0,
+      "sensor_health": {
+        "frames": 800,
+        "availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "consecutive_misses": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "missing_counts": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "range_redundancy_lost": false,
+        "range_redundancy_ever_lost": false,
+        "range_redundancy_loss_events": 0
+      },
+      "radar_sync": {
+        "reads": 859,
+        "wait_p50_ms": 0.01,
+        "wait_p95_ms": 0.02,
+        "wait_p99_ms": 0.06,
+        "stale_discarded": 1,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "radar_availability": 1.0,
+      "radar_velocity_validated": true,
+      "weather": "clear",
+      "fault": "none",
+      "fault_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "criteria": {
+          "fault_observed": [],
+          "single_sensor_preserves_range_redundancy": true,
+          "dual_range_fault_requires_odd_mrm": false
+        }
+      },
+      "weather_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "expected": "NORMAL",
+        "observed": [
+          "NORMAL"
+        ],
+        "mrm_required": false,
+        "external_violation_expected": false
+      },
+      "odd_violation_seen": false,
+      "odd_states_seen": [
+        "NORMAL"
+      ],
+      "mrm_seen": false,
+      "seed": 1337,
+      "last_control_status": {
+        "mode": "custom",
+        "behavior_state": "LANE_FOLLOWING",
+        "target_speed_kmh": 30.0,
+        "lane_change_side": null,
+        "turn_intent": null,
+        "stop_sign_pending": false,
+        "traffic_light_state": "green",
+        "path_points": 24,
+        "route_valid": true,
+        "route_road_id": 0
+      },
+      "stage_metrics": {
+        "stages": {
+          "control": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 0.334,
+            "p95_ms": 0.861,
+            "p99_ms": 1.808,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "safety_loop": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 3.819,
+            "p95_ms": 7.635,
+            "p99_ms": 12.355,
+            "deadline_ms": 25.0,
+            "deadline_misses": 2,
+            "window_deadline_misses": 2,
+            "deadline_miss_fraction": 0.0025,
+            "window_deadline_miss_fraction": 0.0025
+          },
+          "safety_geometry": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.533,
+            "p95_ms": 3.634,
+            "p99_ms": 6.358,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "tracking_safety": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.499,
+            "p95_ms": 2.903,
+            "p99_ms": 4.474,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "sensor_sync": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 22.129,
+            "p95_ms": 37.637,
+            "p99_ms": 76.665,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "perception": {
+            "samples": 57,
+            "total_samples": 57,
+            "invalid_samples": 0,
+            "p50_ms": 101.634,
+            "p95_ms": 124.902,
+            "p99_ms": 127.329,
+            "deadline_ms": 50.0,
+            "deadline_misses": 51,
+            "window_deadline_misses": 51,
+            "deadline_miss_fraction": 0.8947368421052632,
+            "window_deadline_miss_fraction": 0.8947368421052632
+          }
+        },
+        "inference_age_p95_ms": null,
+        "inference_age_total_samples": 0,
+        "inference_age_window_samples": 0,
+        "inference_age_invalid_samples": 0,
+        "gpu_peak_mb": null,
+        "gpu_device_peak_used_mb": null,
+        "gpu_device_total_mb": null,
+        "gpu_tensor_samples": 0,
+        "gpu_device_samples": 0,
+        "gpu_sampling_errors": 0,
+        "gpu_last_error": null,
+        "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak"
+      },
+      "criteria": {
+        "scenario_triggered": true,
+        "collisions": 0,
+        "max_reaction_s": 1.0,
+        "min_clearance_m": 0.25,
+        "sensor_frame_errors": 0,
+        "cutin_requires_brake_or_evade": false
+      },
+      "pass": false,
+      "reasons": [
+        "phản ứng trễ 1.23s > 1.00s"
+      ]
+    },
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "aeb_triggered": true,
+      "evaded": false,
+      "min_distance_m": 5.25,
+      "scenario_min_clearance_m": 5.81,
+      "min_ttc_s": 0.25,
+      "max_decel_ms2": 10.97,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 5.25,
+        "min_ttc_s": 0.25,
+        "max_decel_ms2": 10.97,
+        "max_jerk_ms3": 59.97,
+        "impact_decel_spikes": 3,
+        "pipeline_latency_p50_ms": 26.53,
+        "pipeline_latency_p95_ms": 41.73,
+        "pipeline_latency_p99_ms": 53.51,
+        "safety_latency_p99_ms": 9.3,
+        "perception_latency_p95_ms": 110.81,
+        "inference_age_p95_ms": 140.0,
+        "gpu_memory_peak_mb": null,
+        "sensor_availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "mean_speed_kmh": 23.8,
+        "max_speed_kmh": 29.5,
+        "pct_time_state": {
+          "NORMAL": 81.4,
+          "EMERGENCY_BRAKE": 12.9,
+          "BRAKE_HOLD": 5.8
+        },
+        "success": true
+      },
+      "triggered": true,
+      "trigger_frame": 0,
+      "hazard_frame": 0,
+      "first_reaction_frame": 24,
+      "reaction_delay_s": 0.6000000000000001,
+      "ttc_at_reaction_s": 1.0,
+      "distance_at_reaction_m": 5.25,
+      "source_at_reaction": "tracker",
+      "sensor_sync": {
+        "reads": 1718,
+        "wait_p50_ms": 0.55,
+        "wait_p95_ms": 28.06,
+        "wait_p99_ms": 37.15,
+        "stale_discarded": 0,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "sensor_frame_errors": 0,
+      "sensor_health": {
+        "frames": 800,
+        "availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "consecutive_misses": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "missing_counts": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "range_redundancy_lost": false,
+        "range_redundancy_ever_lost": false,
+        "range_redundancy_loss_events": 0
+      },
+      "radar_sync": {
+        "reads": 859,
+        "wait_p50_ms": 0.01,
+        "wait_p95_ms": 0.01,
+        "wait_p99_ms": 0.03,
+        "stale_discarded": 1,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "radar_availability": 1.0,
+      "radar_velocity_validated": true,
+      "weather": "light_rain",
+      "fault": "none",
+      "fault_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "criteria": {
+          "fault_observed": [],
+          "single_sensor_preserves_range_redundancy": true,
+          "dual_range_fault_requires_odd_mrm": false
+        }
+      },
+      "weather_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "expected": "NORMAL",
+        "observed": [
+          "NORMAL"
+        ],
+        "mrm_required": false,
+        "external_violation_expected": false
+      },
+      "odd_violation_seen": false,
+      "odd_states_seen": [
+        "NORMAL"
+      ],
+      "mrm_seen": false,
+      "seed": 1337,
+      "last_control_status": {
+        "mode": "custom",
+        "behavior_state": "LANE_FOLLOWING",
+        "target_speed_kmh": 30.0,
+        "lane_change_side": null,
+        "turn_intent": null,
+        "stop_sign_pending": false,
+        "traffic_light_state": "green",
+        "path_points": 24,
+        "route_valid": true,
+        "route_road_id": 0
+      },
+      "stage_metrics": {
+        "stages": {
+          "control": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 0.302,
+            "p95_ms": 0.86,
+            "p99_ms": 1.648,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "safety_loop": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 3.892,
+            "p95_ms": 7.329,
+            "p99_ms": 9.298,
+            "deadline_ms": 25.0,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": 0.0,
+            "window_deadline_miss_fraction": 0.0
+          },
+          "safety_geometry": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.535,
+            "p95_ms": 3.587,
+            "p99_ms": 6.308,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "tracking_safety": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.527,
+            "p95_ms": 2.469,
+            "p99_ms": 4.301,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "sensor_sync": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 22.27,
+            "p95_ms": 37.473,
+            "p99_ms": 45.66,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "perception": {
+            "samples": 102,
+            "total_samples": 102,
+            "invalid_samples": 0,
+            "p50_ms": 49.587,
+            "p95_ms": 110.811,
+            "p99_ms": 117.409,
+            "deadline_ms": 50.0,
+            "deadline_misses": 49,
+            "window_deadline_misses": 49,
+            "deadline_miss_fraction": 0.4803921568627451,
+            "window_deadline_miss_fraction": 0.4803921568627451
+          }
+        },
+        "inference_age_p95_ms": null,
+        "inference_age_total_samples": 0,
+        "inference_age_window_samples": 0,
+        "inference_age_invalid_samples": 0,
+        "gpu_peak_mb": null,
+        "gpu_device_peak_used_mb": null,
+        "gpu_device_total_mb": null,
+        "gpu_tensor_samples": 0,
+        "gpu_device_samples": 0,
+        "gpu_sampling_errors": 0,
+        "gpu_last_error": null,
+        "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak"
+      },
+      "criteria": {
+        "scenario_triggered": true,
+        "collisions": 0,
+        "max_reaction_s": 1.0,
+        "min_clearance_m": 0.25,
+        "sensor_frame_errors": 0,
+        "cutin_requires_brake_or_evade": false
+      },
+      "pass": true,
+      "reasons": []
+    },
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "aeb_triggered": true,
+      "evaded": false,
+      "min_distance_m": 3.22,
+      "scenario_min_clearance_m": 4.3,
+      "min_ttc_s": 0.23,
+      "max_decel_ms2": 7.9,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 3.22,
+        "min_ttc_s": 0.23,
+        "max_decel_ms2": 7.9,
+        "max_jerk_ms3": 57.87,
+        "impact_decel_spikes": 8,
+        "pipeline_latency_p50_ms": 27.57,
+        "pipeline_latency_p95_ms": 46.19,
+        "pipeline_latency_p99_ms": 84.38,
+        "safety_latency_p99_ms": 9.24,
+        "perception_latency_p95_ms": 120.28,
+        "inference_age_p95_ms": 141.0,
+        "gpu_memory_peak_mb": null,
+        "sensor_availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "mean_speed_kmh": 25.2,
+        "max_speed_kmh": 29.5,
+        "pct_time_state": {
+          "NORMAL": 86.9,
+          "EMERGENCY_BRAKE": 12.4,
+          "BRAKE_HOLD": 0.8
+        },
+        "success": true
+      },
+      "triggered": true,
+      "trigger_frame": 0,
+      "hazard_frame": 0,
+      "first_reaction_frame": 49,
+      "reaction_delay_s": 1.225,
+      "ttc_at_reaction_s": 0.99,
+      "distance_at_reaction_m": 8.24,
+      "source_at_reaction": "radar",
+      "sensor_sync": {
+        "reads": 1718,
+        "wait_p50_ms": 0.14,
+        "wait_p95_ms": 30.23,
+        "wait_p99_ms": 45.28,
+        "stale_discarded": 0,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "sensor_frame_errors": 0,
+      "sensor_health": {
+        "frames": 800,
+        "availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "consecutive_misses": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "missing_counts": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "range_redundancy_lost": false,
+        "range_redundancy_ever_lost": false,
+        "range_redundancy_loss_events": 0
+      },
+      "radar_sync": {
+        "reads": 859,
+        "wait_p50_ms": 0.01,
+        "wait_p95_ms": 0.01,
+        "wait_p99_ms": 0.03,
+        "stale_discarded": 1,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "radar_availability": 1.0,
+      "radar_velocity_validated": true,
+      "weather": "heavy_rain",
+      "fault": "none",
+      "fault_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "criteria": {
+          "fault_observed": [],
+          "single_sensor_preserves_range_redundancy": true,
+          "dual_range_fault_requires_odd_mrm": false
+        }
+      },
+      "weather_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "expected": "DEGRADED",
+        "observed": [
+          "DEGRADED"
+        ],
+        "mrm_required": false,
+        "external_violation_expected": false
+      },
+      "odd_violation_seen": false,
+      "odd_states_seen": [
+        "DEGRADED"
+      ],
+      "mrm_seen": false,
+      "seed": 1337,
+      "last_control_status": {
+        "mode": "custom",
+        "behavior_state": "LANE_FOLLOWING",
+        "target_speed_kmh": 30.0,
+        "lane_change_side": null,
+        "turn_intent": null,
+        "stop_sign_pending": false,
+        "traffic_light_state": "green",
+        "path_points": 24,
+        "route_valid": true,
+        "route_road_id": 0
+      },
+      "stage_metrics": {
+        "stages": {
+          "control": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 0.401,
+            "p95_ms": 0.979,
+            "p99_ms": 1.528,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "safety_loop": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 3.921,
+            "p95_ms": 7.263,
+            "p99_ms": 9.235,
+            "deadline_ms": 25.0,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": 0.0,
+            "window_deadline_miss_fraction": 0.0
+          },
+          "safety_geometry": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.584,
+            "p95_ms": 3.802,
+            "p99_ms": 5.172,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "tracking_safety": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.518,
+            "p95_ms": 2.528,
+            "p99_ms": 4.641,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "sensor_sync": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 23.55,
+            "p95_ms": 40.6,
+            "p99_ms": 78.926,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "perception": {
+            "samples": 39,
+            "total_samples": 39,
+            "invalid_samples": 0,
+            "p50_ms": 102.172,
+            "p95_ms": 120.277,
+            "p99_ms": 133.594,
+            "deadline_ms": 50.0,
+            "deadline_misses": 39,
+            "window_deadline_misses": 39,
+            "deadline_miss_fraction": 1.0,
+            "window_deadline_miss_fraction": 1.0
+          }
+        },
+        "inference_age_p95_ms": null,
+        "inference_age_total_samples": 0,
+        "inference_age_window_samples": 0,
+        "inference_age_invalid_samples": 0,
+        "gpu_peak_mb": null,
+        "gpu_device_peak_used_mb": null,
+        "gpu_device_total_mb": null,
+        "gpu_tensor_samples": 0,
+        "gpu_device_samples": 0,
+        "gpu_sampling_errors": 0,
+        "gpu_last_error": null,
+        "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak"
+      },
+      "criteria": {
+        "scenario_triggered": true,
+        "collisions": 0,
+        "max_reaction_s": 1.0,
+        "min_clearance_m": 0.25,
+        "sensor_frame_errors": 0,
+        "cutin_requires_brake_or_evade": false
+      },
+      "pass": false,
+      "reasons": [
+        "phản ứng trễ 1.23s > 1.00s"
+      ]
+    },
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "aeb_triggered": true,
+      "evaded": false,
+      "min_distance_m": 3.93,
+      "scenario_min_clearance_m": 5.25,
+      "min_ttc_s": 0.32,
+      "max_decel_ms2": 6.46,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 3.93,
+        "min_ttc_s": 0.32,
+        "max_decel_ms2": 6.46,
+        "max_jerk_ms3": 59.69,
+        "impact_decel_spikes": 10,
+        "pipeline_latency_p50_ms": 26.87,
+        "pipeline_latency_p95_ms": 42.88,
+        "pipeline_latency_p99_ms": 65.25,
+        "safety_latency_p99_ms": 10.13,
+        "perception_latency_p95_ms": 119.04,
+        "inference_age_p95_ms": 141.0,
+        "gpu_memory_peak_mb": null,
+        "sensor_availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "mean_speed_kmh": 24.3,
+        "max_speed_kmh": 29.5,
+        "pct_time_state": {
+          "NORMAL": 85.2,
+          "EMERGENCY_BRAKE": 13.1,
+          "BRAKE_HOLD": 1.6
+        },
+        "success": true
+      },
+      "triggered": true,
+      "trigger_frame": 0,
+      "hazard_frame": 0,
+      "first_reaction_frame": 44,
+      "reaction_delay_s": 1.1,
+      "ttc_at_reaction_s": 1.15,
+      "distance_at_reaction_m": 9.44,
+      "source_at_reaction": "tracker",
+      "sensor_sync": {
+        "reads": 1718,
+        "wait_p50_ms": 0.07,
+        "wait_p95_ms": 28.95,
+        "wait_p99_ms": 42.86,
+        "stale_discarded": 0,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "sensor_frame_errors": 0,
+      "sensor_health": {
+        "frames": 800,
+        "availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "consecutive_misses": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "missing_counts": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "range_redundancy_lost": false,
+        "range_redundancy_ever_lost": false,
+        "range_redundancy_loss_events": 0
+      },
+      "radar_sync": {
+        "reads": 859,
+        "wait_p50_ms": 0.01,
+        "wait_p95_ms": 0.01,
+        "wait_p99_ms": 0.03,
+        "stale_discarded": 1,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "radar_availability": 1.0,
+      "radar_velocity_validated": true,
+      "weather": "clear",
+      "fault": "none",
+      "fault_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "criteria": {
+          "fault_observed": [],
+          "single_sensor_preserves_range_redundancy": true,
+          "dual_range_fault_requires_odd_mrm": false
+        }
+      },
+      "weather_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "expected": "NORMAL",
+        "observed": [
+          "NORMAL"
+        ],
+        "mrm_required": false,
+        "external_violation_expected": false
+      },
+      "odd_violation_seen": false,
+      "odd_states_seen": [
+        "NORMAL"
+      ],
+      "mrm_seen": false,
+      "seed": 2026,
+      "last_control_status": {
+        "mode": "custom",
+        "behavior_state": "LANE_FOLLOWING",
+        "target_speed_kmh": 30.0,
+        "lane_change_side": null,
+        "turn_intent": null,
+        "stop_sign_pending": false,
+        "traffic_light_state": "green",
+        "path_points": 24,
+        "route_valid": true,
+        "route_road_id": 0
+      },
+      "stage_metrics": {
+        "stages": {
+          "control": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 0.376,
+            "p95_ms": 0.869,
+            "p99_ms": 1.719,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "safety_loop": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 3.794,
+            "p95_ms": 7.473,
+            "p99_ms": 10.126,
+            "deadline_ms": 25.0,
+            "deadline_misses": 3,
+            "window_deadline_misses": 3,
+            "deadline_miss_fraction": 0.00375,
+            "window_deadline_miss_fraction": 0.00375
+          },
+          "safety_geometry": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.537,
+            "p95_ms": 3.78,
+            "p99_ms": 5.566,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "tracking_safety": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.48,
+            "p95_ms": 2.519,
+            "p99_ms": 5.181,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "sensor_sync": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 23.023,
+            "p95_ms": 38.027,
+            "p99_ms": 53.393,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "perception": {
+            "samples": 51,
+            "total_samples": 51,
+            "invalid_samples": 0,
+            "p50_ms": 98.064,
+            "p95_ms": 119.039,
+            "p99_ms": 123.918,
+            "deadline_ms": 50.0,
+            "deadline_misses": 51,
+            "window_deadline_misses": 51,
+            "deadline_miss_fraction": 1.0,
+            "window_deadline_miss_fraction": 1.0
+          }
+        },
+        "inference_age_p95_ms": null,
+        "inference_age_total_samples": 0,
+        "inference_age_window_samples": 0,
+        "inference_age_invalid_samples": 0,
+        "gpu_peak_mb": null,
+        "gpu_device_peak_used_mb": null,
+        "gpu_device_total_mb": null,
+        "gpu_tensor_samples": 0,
+        "gpu_device_samples": 0,
+        "gpu_sampling_errors": 0,
+        "gpu_last_error": null,
+        "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak"
+      },
+      "criteria": {
+        "scenario_triggered": true,
+        "collisions": 0,
+        "max_reaction_s": 1.0,
+        "min_clearance_m": 0.25,
+        "sensor_frame_errors": 0,
+        "cutin_requires_brake_or_evade": false
+      },
+      "pass": false,
+      "reasons": [
+        "phản ứng trễ 1.10s > 1.00s"
+      ]
+    },
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "aeb_triggered": true,
+      "evaded": false,
+      "min_distance_m": 3.55,
+      "scenario_min_clearance_m": 4.76,
+      "min_ttc_s": 0.25,
+      "max_decel_ms2": 6.9,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 3.55,
+        "min_ttc_s": 0.25,
+        "max_decel_ms2": 6.9,
+        "max_jerk_ms3": 57.78,
+        "impact_decel_spikes": 8,
+        "pipeline_latency_p50_ms": 26.19,
+        "pipeline_latency_p95_ms": 41.29,
+        "pipeline_latency_p99_ms": 89.97,
+        "safety_latency_p99_ms": 8.22,
+        "perception_latency_p95_ms": 123.89,
+        "inference_age_p95_ms": 141.0,
+        "gpu_memory_peak_mb": null,
+        "sensor_availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "mean_speed_kmh": 24.8,
+        "max_speed_kmh": 29.5,
+        "pct_time_state": {
+          "NORMAL": 84.6,
+          "EMERGENCY_BRAKE": 13.5,
+          "BRAKE_HOLD": 1.9
+        },
+        "success": true
+      },
+      "triggered": true,
+      "trigger_frame": 0,
+      "hazard_frame": 0,
+      "first_reaction_frame": 22,
+      "reaction_delay_s": 0.55,
+      "ttc_at_reaction_s": 0.75,
+      "distance_at_reaction_m": 7.81,
+      "source_at_reaction": "tracker",
+      "sensor_sync": {
+        "reads": 1718,
+        "wait_p50_ms": 0.05,
+        "wait_p95_ms": 27.73,
+        "wait_p99_ms": 45.43,
+        "stale_discarded": 0,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "sensor_frame_errors": 0,
+      "sensor_health": {
+        "frames": 800,
+        "availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "consecutive_misses": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "missing_counts": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "range_redundancy_lost": false,
+        "range_redundancy_ever_lost": false,
+        "range_redundancy_loss_events": 0
+      },
+      "radar_sync": {
+        "reads": 859,
+        "wait_p50_ms": 0.01,
+        "wait_p95_ms": 0.01,
+        "wait_p99_ms": 0.02,
+        "stale_discarded": 1,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "radar_availability": 1.0,
+      "radar_velocity_validated": true,
+      "weather": "light_rain",
+      "fault": "none",
+      "fault_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "criteria": {
+          "fault_observed": [],
+          "single_sensor_preserves_range_redundancy": true,
+          "dual_range_fault_requires_odd_mrm": false
+        }
+      },
+      "weather_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "expected": "NORMAL",
+        "observed": [
+          "NORMAL"
+        ],
+        "mrm_required": false,
+        "external_violation_expected": false
+      },
+      "odd_violation_seen": false,
+      "odd_states_seen": [
+        "NORMAL"
+      ],
+      "mrm_seen": false,
+      "seed": 2026,
+      "last_control_status": {
+        "mode": "custom",
+        "behavior_state": "LANE_FOLLOWING",
+        "target_speed_kmh": 30.0,
+        "lane_change_side": null,
+        "turn_intent": null,
+        "stop_sign_pending": false,
+        "traffic_light_state": "green",
+        "path_points": 24,
+        "route_valid": true,
+        "route_road_id": 0
+      },
+      "stage_metrics": {
+        "stages": {
+          "control": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 0.404,
+            "p95_ms": 0.777,
+            "p99_ms": 1.431,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "safety_loop": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 3.557,
+            "p95_ms": 5.615,
+            "p99_ms": 8.222,
+            "deadline_ms": 25.0,
+            "deadline_misses": 1,
+            "window_deadline_misses": 1,
+            "deadline_miss_fraction": 0.00125,
+            "window_deadline_miss_fraction": 0.00125
+          },
+          "safety_geometry": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.431,
+            "p95_ms": 2.676,
+            "p99_ms": 4.973,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "tracking_safety": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.391,
+            "p95_ms": 2.105,
+            "p99_ms": 3.861,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "sensor_sync": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 22.434,
+            "p95_ms": 36.601,
+            "p99_ms": 83.684,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "perception": {
+            "samples": 41,
+            "total_samples": 41,
+            "invalid_samples": 0,
+            "p50_ms": 107.516,
+            "p95_ms": 123.89,
+            "p99_ms": 126.959,
+            "deadline_ms": 50.0,
+            "deadline_misses": 41,
+            "window_deadline_misses": 41,
+            "deadline_miss_fraction": 1.0,
+            "window_deadline_miss_fraction": 1.0
+          }
+        },
+        "inference_age_p95_ms": null,
+        "inference_age_total_samples": 0,
+        "inference_age_window_samples": 0,
+        "inference_age_invalid_samples": 0,
+        "gpu_peak_mb": null,
+        "gpu_device_peak_used_mb": null,
+        "gpu_device_total_mb": null,
+        "gpu_tensor_samples": 0,
+        "gpu_device_samples": 0,
+        "gpu_sampling_errors": 0,
+        "gpu_last_error": null,
+        "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak"
+      },
+      "criteria": {
+        "scenario_triggered": true,
+        "collisions": 0,
+        "max_reaction_s": 1.0,
+        "min_clearance_m": 0.25,
+        "sensor_frame_errors": 0,
+        "cutin_requires_brake_or_evade": false
+      },
+      "pass": true,
+      "reasons": []
+    },
+    {
+      "profile": "DynamicObjectCrossing",
+      "name": "DynamicObjectCrossing",
+      "category": "crossing",
+      "tests": "Phanh khẩn cấp (người đi bộ)",
+      "collisions": 0,
+      "reacted": true,
+      "braked": true,
+      "aeb_triggered": true,
+      "evaded": false,
+      "min_distance_m": 3.15,
+      "scenario_min_clearance_m": 4.28,
+      "min_ttc_s": 0.24,
+      "max_decel_ms2": 6.47,
+      "kpi": {
+        "scenario": "DynamicObjectCrossing",
+        "duration_s": 20.0,
+        "frames": 800,
+        "collisions": 0,
+        "min_distance_m": 3.15,
+        "min_ttc_s": 0.24,
+        "max_decel_ms2": 6.47,
+        "max_jerk_ms3": 59.47,
+        "impact_decel_spikes": 9,
+        "pipeline_latency_p50_ms": 24.15,
+        "pipeline_latency_p95_ms": 37.79,
+        "pipeline_latency_p99_ms": 78.74,
+        "safety_latency_p99_ms": 8.6,
+        "perception_latency_p95_ms": 109.8,
+        "inference_age_p95_ms": 141.0,
+        "gpu_memory_peak_mb": null,
+        "sensor_availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "mean_speed_kmh": 25.2,
+        "max_speed_kmh": 29.5,
+        "pct_time_state": {
+          "NORMAL": 86.9,
+          "EMERGENCY_BRAKE": 12.4,
+          "BRAKE_HOLD": 0.8
+        },
+        "success": true
+      },
+      "triggered": true,
+      "trigger_frame": 0,
+      "hazard_frame": 0,
+      "first_reaction_frame": 49,
+      "reaction_delay_s": 1.225,
+      "ttc_at_reaction_s": 0.99,
+      "distance_at_reaction_m": 8.23,
+      "source_at_reaction": "radar",
+      "sensor_sync": {
+        "reads": 1718,
+        "wait_p50_ms": 0.03,
+        "wait_p95_ms": 24.32,
+        "wait_p99_ms": 37.31,
+        "stale_discarded": 0,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "sensor_frame_errors": 0,
+      "sensor_health": {
+        "frames": 800,
+        "availability": {
+          "camera": 1.0,
+          "lidar": 1.0,
+          "radar": 1.0
+        },
+        "consecutive_misses": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "missing_counts": {
+          "camera": 0,
+          "lidar": 0,
+          "radar": 0
+        },
+        "range_redundancy_lost": false,
+        "range_redundancy_ever_lost": false,
+        "range_redundancy_loss_events": 0
+      },
+      "radar_sync": {
+        "reads": 859,
+        "wait_p50_ms": 0.01,
+        "wait_p95_ms": 0.01,
+        "wait_p99_ms": 0.01,
+        "stale_discarded": 1,
+        "frame_errors": 0,
+        "pairing_samples": 0,
+        "pairing_skew_max_frames": 0,
+        "pairing_skew_p95_frames": 0.0
+      },
+      "radar_availability": 1.0,
+      "radar_velocity_validated": true,
+      "weather": "heavy_rain",
+      "fault": "none",
+      "fault_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "criteria": {
+          "fault_observed": [],
+          "single_sensor_preserves_range_redundancy": true,
+          "dual_range_fault_requires_odd_mrm": false
+        }
+      },
+      "weather_acceptance": {
+        "pass": true,
+        "reasons": [],
+        "expected": "DEGRADED",
+        "observed": [
+          "DEGRADED"
+        ],
+        "mrm_required": false,
+        "external_violation_expected": false
+      },
+      "odd_violation_seen": false,
+      "odd_states_seen": [
+        "DEGRADED"
+      ],
+      "mrm_seen": false,
+      "seed": 2026,
+      "last_control_status": {
+        "mode": "custom",
+        "behavior_state": "LANE_FOLLOWING",
+        "target_speed_kmh": 30.0,
+        "lane_change_side": null,
+        "turn_intent": null,
+        "stop_sign_pending": false,
+        "traffic_light_state": "green",
+        "path_points": 24,
+        "route_valid": true,
+        "route_road_id": 0
+      },
+      "stage_metrics": {
+        "stages": {
+          "control": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 0.224,
+            "p95_ms": 0.645,
+            "p99_ms": 0.897,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "safety_loop": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 3.46,
+            "p95_ms": 5.702,
+            "p99_ms": 8.595,
+            "deadline_ms": 25.0,
+            "deadline_misses": 2,
+            "window_deadline_misses": 2,
+            "deadline_miss_fraction": 0.0025,
+            "window_deadline_miss_fraction": 0.0025
+          },
+          "safety_geometry": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.435,
+            "p95_ms": 2.443,
+            "p99_ms": 4.686,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "tracking_safety": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 1.382,
+            "p95_ms": 2.158,
+            "p99_ms": 4.777,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "sensor_sync": {
+            "samples": 800,
+            "total_samples": 800,
+            "invalid_samples": 0,
+            "p50_ms": 20.735,
+            "p95_ms": 33.0,
+            "p99_ms": 71.467,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "perception": {
+            "samples": 106,
+            "total_samples": 106,
+            "invalid_samples": 0,
+            "p50_ms": 45.604,
+            "p95_ms": 109.8,
+            "p99_ms": 116.637,
+            "deadline_ms": 50.0,
+            "deadline_misses": 46,
+            "window_deadline_misses": 46,
+            "deadline_miss_fraction": 0.4339622641509434,
+            "window_deadline_miss_fraction": 0.4339622641509434
+          }
+        },
+        "inference_age_p95_ms": null,
+        "inference_age_total_samples": 0,
+        "inference_age_window_samples": 0,
+        "inference_age_invalid_samples": 0,
+        "gpu_peak_mb": null,
+        "gpu_device_peak_used_mb": null,
+        "gpu_device_total_mb": null,
+        "gpu_tensor_samples": 0,
+        "gpu_device_samples": 0,
+        "gpu_sampling_errors": 0,
+        "gpu_last_error": null,
+        "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak"
+      },
+      "criteria": {
+        "scenario_triggered": true,
+        "collisions": 0,
+        "max_reaction_s": 1.0,
+        "min_clearance_m": 0.25,
+        "sensor_frame_errors": 0,
+        "cutin_requires_brake_or_evade": false
+      },
+      "pass": false,
+      "reasons": [
+        "phản ứng trễ 1.23s > 1.00s"
+      ]
+    }
+  ],
+  "acceptance_gate": {
+    "core": {
+      "required": "18/18",
+      "observed": "3/9",
+      "pass": null
+    },
+    "catalog": {
+      "required": ">=43/45",
+      "observed": "3/9",
+      "pass": null
+    },
+    "no_collision_in_valid_runs": true,
+    "status": "NOT_EVALUATED"
+  },
+  "run": {
+    "seeds": [
+      42,
+      1337,
+      2026
+    ],
+    "weathers": [
+      "clear",
+      "light_rain",
+      "heavy_rain"
+    ],
+    "fault": "none",
+    "inference_device": "cpu",
+    "inference_device_requested": "auto",
+    "inference_device_reason": "safe Windows CARLA mode (avoid CUDA/D3D11 contention)",
+    "town": "Town02",
+    "core_scenarios": [
+      "FollowLeadingVehicle",
+      "HardBrake",
+      "StationaryObjectCrossing",
+      "DynamicObjectCrossing",
+      "ConstructionObstacle",
+      "CutInFrom_left_Lane"
+    ],
+    "seconds_per_scenario": 20.0,
+    "fps": 40,
+    "suite": "DynamicObjectCrossing",
+    "thresholds": {
+      "critical_ttc_s": 1.6,
+      "warning_ttc_s": 3.0,
+      "min_safe_dist_m": 6.0,
+      "lane_half_width_m": 1.75,
+      "evade_lookahead_m": 25.0
+    }
+  }
+}

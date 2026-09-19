@@ -144,9 +144,37 @@ and abort conditions: [`docs/ARCHITECTURE.md` §7.3](docs/ARCHITECTURE.md#73-the
 
 > **Reading these honestly.** Numbers below were measured on specific configurations and dates; each states its context. They are simulator results from a portfolio project, **not** certified ADAS metrics. Live runtime latency and full-capture stability on the current custom build are still being worked (see [Known limitations](#known-limitations)); results outside the current stable envelope are labelled as such.
 
-### Scenario harness — curated AEB/avoidance suite (earlier ground-filter build)
+### Scenario harness — re-run on HEAD, 2026-09-19
 
-Measured 2026-09-01 on an RTX 4070 Laptop with the radar-ground-filter code, before the current native-stability investigation. **The reports are published** at [`docs/benchmarks/`](docs/benchmarks/) — they were previously only in the git-ignored `logs/`, so these figures could not be checked from the repository. Reproduce with `run_scenarios.py`.
+Against a live CARLA server (build `edf3e9f5c`, Town02, RTX 4070 Laptop) on the
+current code. Reports in [`docs/benchmarks/`](docs/benchmarks/).
+
+| Check | Observed | Target | Result | Artifact |
+|---|---:|---:|:---:|---|
+| Full catalog, 15 scenarios × 3 seeds | **43/45** | ≥43/45 | ✅ | [`head_catalog_3seed.json`](docs/benchmarks/head_catalog_3seed.json) |
+| Core suite × 5 weather profiles | **28/30** | 30/30 | ❌ | [`head_core_5weather.json`](docs/benchmarks/head_core_5weather.json) |
+| Core suite, seed 42, clear | **6/6** | 6/6 | ✅ | [`head_core_seed42.json`](docs/benchmarks/head_core_seed42.json) |
+| Collisions, all 90 runs | **0** | 0 | ✅ | all of the above |
+| Camera–LiDAR frame errors, all 90 runs | **0** | 0 | ✅ | all of the above |
+
+Every failure is the same scenario missing the same single criterion:
+`DynamicObjectCrossing` reacts in **1.225 s** against a 1.0 s budget. It brakes,
+never collides, and keeps >3.1 m clearance — it is late, not unsafe. Across seeds
+it straddles the threshold in clear weather too (0.30 s / 1.225 s / 1.10 s), so it
+is a marginal scenario rather than a weather effect, and it is **not** a regression
+from the recent fixes: the same scenario on the pre-fix commit `47d9274` gives
+identical numbers. See [Known limitations](#known-limitations).
+
+**Why these numbers are lower than the 2026-09-01 ones below, and better.** The
+older reports record `hazard_frame: null` and `reaction_delay_s: 0.0` for every
+case: the harness had no hazard origin to measure from, so the reaction-delay
+criterion could not fail. It measures properly now. Part of the old 45/45 and
+30/30 was obtained with one of the five acceptance criteria inert — the numbers
+above are the stricter ones.
+
+### Scenario harness — earlier ground-filter build (2026-09-01, superseded)
+
+Kept for contrast. Measured 2026-09-01 on the radar-ground-filter build, with the reaction-delay criterion inert as described above, so these are **not** the numbers to quote. Published at [`docs/benchmarks/`](docs/benchmarks/) rather than deleted, because the comparison is the point.
 
 | Check | Observed | Target | Result | Artifact |
 |---|---:|---:|:---:|---|
@@ -156,13 +184,8 @@ Measured 2026-09-01 on an RTX 4070 Laptop with the radar-ground-filter code, bef
 | Collisions / camera–LiDAR frame errors | 0 / 0 | 0 / 0 | ✅ | all three above |
 | Max reaction delay / min GT clearance | 0.875 s / 4.04 m | ≤1.0 s / ≥0.25 m | ✅ | all three above |
 
-> **Scope of these numbers.** They are evidence that the suite passed **on the
-> build of 2026-09-01**, not a claim about the current commit: those reports
-> predate the `meta` block the harness now embeds, so they carry no commit SHA or
-> CARLA build inside the file. Re-running on HEAD needs a CARLA server and has not
-> been done — status **unverified on HEAD**. The older
-> [`docs/scenario_baseline_report.json`](docs/scenario_baseline_report.json)
-> (2026-08-04, 2/3 pass, 18 collision events) is kept deliberately as the
+> The 2026-08-04 [`docs/scenario_baseline_report.json`](docs/scenario_baseline_report.json)
+> (2/3 pass, 18 collision events) is kept deliberately as the earliest
 > before-picture; it is superseded, not hidden.
 
 ### CARLA-free self-test
@@ -207,6 +230,7 @@ Hands-on testing exposed a false positive: with zero traffic, AEB latched to a s
 Honesty about limits is part of the engineering.
 
 - **Native engine crash (B01) on heavy capture.** On the local custom CARLA build (`edf3e9f5c`, UE4 4.26.2), the fuller capture stack can trigger an intermittent native `EXCEPTION_ACCESS_VIOLATION` in skeletal-mesh scene-proxy render dispatch (`FSkeletalMeshSceneProxy` / `MeshObject`) during camera scene-capture. It has been reproduced across D3D11 and D3D12, `-onethread`, and low-render configurations; the available minidumps lack the heap needed to prove the object-lifetime root cause, and no matching native source/build tree is available to repair it. **Consequence:** demos and captures are scoped to a stable envelope (Low quality, 640×360, bounded runs). A full write-up is in [`docs/B01_FAILURE_ANALYSIS.md`](docs/B01_FAILURE_ANALYSIS.md).
+- **`DynamicObjectCrossing` misses the 1.0 s reaction budget about half the time.** Measured on HEAD 2026-09-19: it reacts in **1.225 s** (49 frames), brakes, never collides, and keeps >3.1 m clearance — but it is late against the stated budget. It straddles the threshold across seeds in clear weather (0.30 / 1.225 / 1.10 s) and is deterministic at 1.225 s in heavy rain. It is **not** a recent regression: the same scenario on the pre-fix commit `47d9274` gives identical numbers. The reaction origin is `hazard_frame`, so this is a genuine late-reaction finding rather than a measurement artefact — and it is the reason the current catalog score is 43/45 rather than 45/45. Evidence: [`docs/benchmarks/head_doc_probe.json`](docs/benchmarks/head_doc_probe.json) and [`pre_f02_doc_heavyrain.json`](docs/benchmarks/pre_f02_doc_heavyrain.json). Not yet diagnosed.
 - **Detector accuracy is not qualified.** The demo uses pretrained COCO weights; a custom CARLA-domain 8-class detector is future work and does not yet meet an accuracy bar.
 - **Runtime latency / throughput targets are aspirational**, not certified: on CPU-inference debug profiles the 20 FPS object / p95 latency targets are not met. Reported latency numbers state their profile.
 - **Not a real-vehicle system.** This is a simulation study; it is not validated ADAS/L3 for a physical vehicle.

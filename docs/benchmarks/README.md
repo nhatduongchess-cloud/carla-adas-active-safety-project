@@ -5,13 +5,74 @@ They were previously only in `logs/`, which is git-ignored, so the figures could
 not be checked by anyone reading the repository. They are published here
 unmodified — same bytes the harness wrote.
 
+## Run on HEAD, 2026-09-19
+
+Re-run against a live CARLA server (build `edf3e9f5c`, client `edf3e9f5c`,
+Town02, RTX 4070 Laptop) on the current code, after the F01–F12 review fixes.
+
+| Artifact | Suite | Cases | Result |
+|---|---|---:|---|
+| [`head_catalog_3seed.json`](head_catalog_3seed.json) | Full catalog × 3 seeds, clear | 45 | **43 pass / 2 fail** — target ≥43/45 met |
+| [`head_core_5weather.json`](head_core_5weather.json) | Core × 5 weather profiles | 30 | **28 pass / 2 fail** |
+| [`head_core_seed42.json`](head_core_seed42.json) | Core, seed 42, clear | 6 | **6 pass / 0 fail** |
+| [`head_doc_probe.json`](head_doc_probe.json) | `DynamicObjectCrossing` × 3 seeds × 3 weathers | 9 | 3 pass / 6 fail — see below |
+| [`pre_f02_doc_heavyrain.json`](pre_f02_doc_heavyrain.json) | Same scenario on the **pre-fix** commit `47d9274` | 3 | 0 pass / 3 fail — attribution evidence |
+
+**Zero collisions and zero camera–LiDAR frame errors in all 90 runs.** Every
+failure above is one criterion — reaction delay — on one scenario.
+
+### The one failing scenario, and why it is not a regression
+
+`DynamicObjectCrossing` misses the `reaction_delay_s <= 1.0` budget about half
+the time, at **1.225 s** (49 frames at 0.025 s). It brakes, it never collides,
+and clearance stays above 3.1 m; it is simply late against the stated budget.
+
+It is not caused by the F01–F12 changes, and that was tested rather than assumed.
+Running the same scenario on the pre-fix commit `47d9274` gives **identical**
+numbers — 1.225 s, frame 49, all three seeds:
+
+| seed | pre-fix `47d9274` | HEAD `feed6cf` |
+|---|---|---|
+| 42 | 1.225 s, frame 49, FAIL | 1.225 s, frame 49, FAIL |
+| 1337 | 1.225 s, frame 49, FAIL | 1.225 s, frame 49, FAIL |
+| 2026 | 1.225 s, frame 49, FAIL | 1.225 s, frame 49, FAIL |
+
+Nor is it weather-specific, which the first weather matrix made it look like.
+Across seeds it straddles the threshold in **clear** weather too:
+
+| weather | reaction delay by seed 42 / 1337 / 2026 |
+|---|---|
+| clear | 0.30 s ✅ · 1.225 s ❌ · 1.10 s ❌ |
+| light_rain | 1.10 s ❌ · 0.60 s ✅ · 0.55 s ✅ |
+| heavy_rain | 1.225 s ❌ · 1.225 s ❌ · 1.225 s ❌ |
+
+So this is a genuinely marginal scenario on this build, and a single-seed run can
+pass or fail it by luck. That is a real open finding about the system, recorded
+in [`../ARCHITECTURE.md` §12](../ARCHITECTURE.md#12-known-architectural-gaps),
+not a number to tune away.
+
+### Why the older reports show 30/30 and this one shows 28/30
+
+The 2026-09-01 reports record `hazard_frame: null` and `reaction_delay_s: 0.0`
+for **every** case, including this scenario. The harness at that time had no
+hazard origin to measure from, so the `reaction_delay_s <= 1.0` criterion was
+satisfied trivially, always — it could not fail. The current harness measures
+from `hazard_frame` (`modules/scenario_library.py:32-38`), which is why a
+criterion that was previously inert now bites.
+
+Read plainly: **part of the older 30/30 and 45/45 was measured with one of the
+five acceptance criteria effectively switched off.** The newer 43/45 and 28/30
+are the stricter numbers, and they are the ones to quote.
+
+## Historical artifacts
+
 | Artifact | What it is | Generated | Cases | Result |
 |---|---|---|---:|---|
-| [`catalog_clear_3seed_final_report.json`](catalog_clear_3seed_final_report.json) | Full scenario catalog, Town02, clear, 3 seeds | 2026-09-01T20:57 | 45 | 45 pass / 0 fail, 0 collisions |
-| [`core_5weather_report.json`](core_5weather_report.json) | Core suite × 5 weather profiles | 2026-09-01T21:07 | 30 | 30 pass / 0 fail, 0 collisions |
-| [`core_clear_3seed_report.json`](core_clear_3seed_report.json) | Core suite, clear, 3 seeds | 2026-09-01T20:19 | 18 | 18 pass / 0 fail, 0 collisions |
+| [`catalog_clear_3seed_final_report.json`](catalog_clear_3seed_final_report.json) | Full catalog, clear, 3 seeds | 2026-09-01T20:57 | 45 | 45/45 — reaction criterion inert, see above |
+| [`core_5weather_report.json`](core_5weather_report.json) | Core × 5 weather profiles | 2026-09-01T21:07 | 30 | 30/30 — same caveat |
+| [`core_clear_3seed_report.json`](core_clear_3seed_report.json) | Core, clear, 3 seeds | 2026-09-01T20:19 | 18 | 18/18 — same caveat |
 | [`demo_clear.json`](demo_clear.json) | Single live runtime report | 2026-09-12 | — | **`status: FAIL`** — see below |
-| [`../scenario_baseline_report.json`](../scenario_baseline_report.json) | **Historical**, kept for contrast | 2026-08-04T20:27 | 3 | 2 pass / 1 fail, 18 collision events |
+| [`../scenario_baseline_report.json`](../scenario_baseline_report.json) | The before-picture, kept deliberately | 2026-08-04T20:27 | 3 | 2 pass / 1 fail, 18 collision events |
 
 ## Acceptance criteria, embedded in each scenario report
 
@@ -38,10 +99,9 @@ Stated because the alternative is letting a reader assume it was captured.
   Windows 11, CARLA 0.9.15) against the radar-ground-filter build — that comes
   from the project log, **not** from inside the files. Reports generated by the
   current harness do embed all of it.
-- They therefore **cannot be tied byte-for-byte to today's HEAD**. They are
-  evidence that the suite passed on the build of that date, not a claim about the
-  current commit. Re-running on HEAD needs a CARLA server; until that happens the
-  honest status of "45/45 on the current code" is **unverified**.
+- They therefore cannot be tied byte-for-byte to today's HEAD. That gap is now
+  closed a different way: the suites were **re-run on HEAD on 2026-09-19** and the
+  results are at the top of this file. Quote those.
 
 ## `demo_clear.json` — read the status field
 

@@ -519,7 +519,7 @@ native crash can be localised to the phase that was running.
 ## 12. Known architectural gaps
 
 Recorded because an architecture document that only describes the intent is a
-brochure. Four of the seven have since been fixed — two found by writing this
+brochure. Four of the eight have since been fixed — two found by writing this
 document, two by an external review that checked its claims against the code — and
 they are kept in [Resolved](#resolved) below rather than deleted.
 
@@ -545,6 +545,29 @@ separates them. A short run that survives is not evidence that short runs are sa
 `stable_async` is a mitigation with a measured cost — the frame-pairing skew in
 [§3](#3-execution-model) — not a fix, and the fault lives in the engine build rather
 than in this code.
+
+**G8 — `DynamicObjectCrossing` reacts late, and it was previously unmeasurable.**
+Measured on HEAD against a live server on 2026-09-19: the scenario commands its
+first brake at frame 49, **1.225 s** after `hazard_frame`, against a stated
+budget of 1.0 s. It brakes, never collides, and holds more than 3.1 m of
+clearance, so this is lateness rather than a safety failure — but it is the sole
+reason the catalog scores 43/45 instead of 45/45 and the weather matrix 28/30.
+
+Three things were established before writing this down. It is **not weather
+specific**: across seeds it straddles the threshold in clear weather too (0.30 s,
+1.225 s, 1.10 s), while heavy rain is deterministic at 1.225 s. It is **not a
+regression** from the F01–F12 work: the same scenario run on the pre-fix commit
+`47d9274` returns identical numbers, frame for frame. And it was **invisible
+before**, because the 2026-09-01 harness recorded `hazard_frame: null` and
+`reaction_delay_s: 0.0` for every case, which made that acceptance criterion
+incapable of failing.
+
+The 49-frame figure is suspiciously constant across seeds and weather, which
+points at a fixed start-up cost — a tracker confirmation count, a smoothing
+window, or a first-inference warm-up — rather than at scene dynamics. That is a
+hypothesis; it has not been traced. Evidence:
+[`docs/benchmarks/head_doc_probe.json`](benchmarks/head_doc_probe.json),
+[`pre_f02_doc_heavyrain.json`](benchmarks/pre_f02_doc_heavyrain.json).
 
 ### Resolved
 
