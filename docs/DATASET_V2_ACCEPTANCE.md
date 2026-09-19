@@ -33,7 +33,7 @@ Không thể chứng minh tuyệt đối “mọi ảnh đều không gần trù
 
 ## Trình tự công việc
 
-1. Audit bổ sung độ nét và near-duplicate toàn bộ V1, lưu hàng đợi review, không sửa/xóa ảnh nguồn. Công cụ mới: `audit_image_quality.py` và `modules/image_quality.py`.
+1. Audit bổ sung độ nét và near-duplicate toàn bộ V1, lưu hàng đợi review, không sửa/xóa ảnh nguồn. Công cụ mới: `scripts/dataset/audit_image_quality.py` và `modules/image_quality.py`.
 2. Review các nhóm lớn và mẫu độ nét thấp theo lớp/thời tiết; xác định phần external nào có thể giữ sau kiểm tra nhãn, phần CARLA nào phải thu lại. Không suy ra toàn bộ dữ liệu tốt chỉ vì detector nhìn thấy Bus.
 3. Xác minh collector V3 trên simulator: hiện còn blocker server access violation, pilot V3 có 0 ảnh. Cần smoke test sensor/actor từng bước trước khi thu mới. Đây là công việc bắt buộc để có dataset đúng, không phải tối ưu runtime phụ.
 4. Thu pilot đa dạng có pose, đủ clear + degraded có chủ đích; kiểm tra bbox/mask/crop/visibility. StopSign ở town train cần nguồn mesh hoặc dữ liệu bổ sung hợp lệ; không lấy test làm train. Nếu tải nguồn ngoài: kiểm tra nguồn/license/security/checksum và hỏi người dùng trước tải/cài.

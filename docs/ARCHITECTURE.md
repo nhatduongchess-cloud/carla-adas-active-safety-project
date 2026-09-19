@@ -529,7 +529,7 @@ implementation also emits `BRAKE_HOLD` and `BRAKE_TO_STOP`
 is the complete one.
 
 **G6 — `carla_host_guard.py` is not wired into the main pipeline.** It is used only
-by `smoke_carla_stack.py` and `test_carla_probe.py`. The identity checks it performs —
+by `scripts/tools/smoke_carla_stack.py` and `tests/test_carla_probe.py`. The identity checks it performs —
 executable hash, PID creation time to defeat PID reuse, foreign connections on the
 CARLA ports — would be worth running before a scored scenario batch too.
 

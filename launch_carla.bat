@@ -77,7 +77,7 @@ if not exist "%PROJECT_PYTHON%" (
 )
 
 echo [CARLA] Dang cho world API va frame async san sang, timeout 120s...
-"%PROJECT_PYTHON%" "%PROJECT_ROOT%wait_for_carla.py" --host 127.0.0.1 --port %PORT% --timeout 120
+"%PROJECT_PYTHON%" "%PROJECT_ROOT%scripts\tools\wait_for_carla.py" --host 127.0.0.1 --port %PORT% --timeout 120
 if errorlevel 1 (
   echo [LOI] Port co the mo nhung CARLA world khong san sang. Khong chay chinh.py.
   exit /b 4

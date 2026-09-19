@@ -19,7 +19,7 @@ Set-Location 'C:\Users\Admin\OneDrive\Desktop\Carla Simulator\Self-Driving-Perce
 .\launch_carla.bat
 
 # Read-only readiness check against the running server
-.\.venvCarLa\Scripts\python.exe wait_for_carla.py --timeout 30
+.\.venvCarLa\Scripts\python.exe scripts\tools\wait_for_carla.py --timeout 30
 ```
 
 Start your screen recorder (OBS or Xbox Game Bar). Capture both the CARLA window and the ADAS dashboard/BEV HUD. Keep each clip ~30 s.

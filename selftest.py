@@ -78,19 +78,19 @@ from weather_acceptance import assess_weather_behavior  # noqa: E402
 from simulation_guard import (SynchronousWorldSession,
                               enter_synchronous_mode, get_or_load_world,
                               restore_world_settings, same_carla_map)  # noqa: E402
-from audit_week2_dataset import evaluate_gates  # noqa: E402
-from collect_carla_dataset import (parse_target_classes,
-                                   prioritize_static_stop_sign_spawns,
-                                   traffic_light_spawn_score)  # noqa: E402
-from collect_targeted_supplement import build_targeted_plan  # noqa: E402
-from collect_stopsign_supplement import build_stop_sign_plan  # noqa: E402
-from audit_dataset_archive import normalized_member_name  # noqa: E402
-from audit_object_sources import evaluate_source_gates  # noqa: E402
-from prepare_stopsign_training_source import (deduplicate_records,
-                                              parse_yolo_row)  # noqa: E402
-from build_yolo_adas_dataset import xyxy_to_yolo  # noqa: E402
+from scripts.dataset.audit_week2_dataset import evaluate_gates  # noqa: E402
+from scripts.dataset.collect_carla_dataset import (
+    parse_target_classes, prioritize_static_stop_sign_spawns,
+    traffic_light_spawn_score)  # noqa: E402
+from scripts.dataset.collect_targeted_supplement import build_targeted_plan  # noqa: E402
+from scripts.dataset.collect_stopsign_supplement import build_stop_sign_plan  # noqa: E402
+from scripts.dataset.audit_dataset_archive import normalized_member_name  # noqa: E402
+from scripts.dataset.audit_object_sources import evaluate_source_gates  # noqa: E402
+from scripts.dataset.prepare_stopsign_training_source import (
+    deduplicate_records, parse_yolo_row)  # noqa: E402
+from scripts.dataset.build_yolo_adas_dataset import xyxy_to_yolo  # noqa: E402
 from training_utils import deterministic_subset  # noqa: E402
-from wait_for_carla import wait_until_ready  # noqa: E402
+from scripts.tools.wait_for_carla import wait_until_ready  # noqa: E402
 import config as runtime_cfg  # noqa: E402
 import queue as _queue  # noqa: E402
 

@@ -3,7 +3,7 @@
 """Phát hiện phương tiện bằng YOLO — hỗ trợ mô hình TỐI ƯU (TensorRT/ONNX).
 
 Tự động dùng bản đã biên dịch nếu có: <model>.engine (TensorRT) > <model>.onnx
-(ONNX Runtime) > <model>.pt (PyTorch gốc). Xuất bằng export_models.py. FP16 nên
+(ONNX Runtime) > <model>.pt (PyTorch gốc). Xuất bằng scripts/training/export_models.py. FP16 nên
 GIỮ NGUYÊN độ chính xác nhưng suy luận nhanh 2-4x -> giảm độ trễ inference và bớt
 kẹt vòng đồng bộ (server ít phải chờ client).
 """

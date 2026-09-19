@@ -42,4 +42,4 @@ Kết quả cuối lượt: compile các file sửa PASS; **16/16 unit test PASS
 .\.venvCarLa\Scripts\python.exe selftest.py
 ```
 
-Chỉ chạy lại collector sau khi kiểm tra server ổn định; không mở training cùng lúc. Khi có capture hợp lệ, chạy `review_label_pilot.py --dataset <pilot-root> --output <new-report-dir>` rồi review cả nhãn được giữ lẫn bị loại trước khi cho phép build YOLO.
+Chỉ chạy lại collector sau khi kiểm tra server ổn định; không mở training cùng lúc. Khi có capture hợp lệ, chạy `scripts/dataset/review_label_pilot.py --dataset <pilot-root> --output <new-report-dir>` rồi review cả nhãn được giữ lẫn bị loại trước khi cho phép build YOLO.

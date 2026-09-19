@@ -5,7 +5,7 @@
 #   typecheck - mypy on the safety-evidence core
 #   selftest  - selftest.py geometry + safety-FSM checks (204)
 #   offline-tests - the test_*.py modules that need no CARLA client
-# Six test_*.py modules import the CARLA client and cannot run here
+# Six modules in tests/ import the CARLA client and cannot run here
 # (test_capture_lifecycle, test_dataset_capture, test_ego_control,
 # test_junction_route, test_road_waypoints, test_sensor_runtime); those stay in
 # the local CARLA environment. Everything else now runs on every push.
@@ -70,9 +70,19 @@ jobs:
       - name: Run the offline unit-test group
         run: >
           python -m unittest
-          test_audit_training_dataset test_carla_probe test_dataset_labels
-          test_decision_trace test_image_quality test_inference_telemetry
-          test_launch_carla test_neural_decoupling test_perception_contracts
-          test_pipeline_metrics test_runtime_cleanup test_runtime_config
-          test_runtime_report test_safety_geometry test_sensor_sync
-          test_validate_dataset
+          tests.test_audit_training_dataset
+          tests.test_carla_probe
+          tests.test_dataset_labels
+          tests.test_decision_trace
+          tests.test_image_quality
+          tests.test_inference_telemetry
+          tests.test_launch_carla
+          tests.test_neural_decoupling
+          tests.test_perception_contracts
+          tests.test_pipeline_metrics
+          tests.test_runtime_cleanup
+          tests.test_runtime_config
+          tests.test_runtime_report
+          tests.test_safety_geometry
+          tests.test_sensor_sync
+          tests.test_validate_dataset

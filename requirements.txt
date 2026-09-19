@@ -26,7 +26,7 @@ matplotlib>=3.8.0            # RL reward curve, plots
 # Only needed when config.USE_MIDAS = True (depth is off the braking path).
 timm>=0.9.0
 
-# --- Optional: inference acceleration (export_models.py) ----------------------
+# --- Optional: inference acceleration (scripts/training/export_models.py) ----------------------
 # Uncomment the one matching your hardware to run the optimized YOLO path.
 # onnx>=1.15.0
 # onnxruntime-gpu>=1.17.0

@@ -55,7 +55,7 @@ RADAR_OPTIONAL_TIMEOUT_S = 0.005
 # vertical FOV 10°, tia thấp chạm road ở ~9-10 m; không lọc sẽ gây AEB giả trên
 # mọi map. LiDAR vẫn chịu trách nhiệm với cone/debris thấp sát mặt đường.
 RADAR_MIN_TARGET_HEIGHT_M = 0.15
-# Đã đo trên CARLA đang dùng bằng validate_radar_sign.py: raw velocity ÂM khi
+# Đã đo trên CARLA đang dùng bằng scripts/tools/validate_radar_sign.py: raw velocity ÂM khi
 # actor tiến gần và DƯƠNG khi rời xa. Chuẩn hóa lại thành closing-speed dương.
 RADAR_VELOCITY_SIGN = -1.0
 RADAR_REQUIRE_SIGN_VALIDATION = True

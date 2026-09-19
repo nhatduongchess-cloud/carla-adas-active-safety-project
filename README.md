@@ -251,10 +251,15 @@ Self-Driving-Perception/
 ├── selftest.py              # CARLA-free self-test of geometry/control/safety (204 checks)
 ├── run_scenarios.py         # Seeded ScenarioRunner-style AEB/avoidance harness → JSON report
 ├── evaluate_l3.py           # Weather-profile L3 evaluation → JSON report
-├── collect_carla_dataset.py # Resumable CARLA capture (schema4) for the data-story sample
-├── validate_dataset.py      # Dataset integrity / decode / label validation
-├── modules/                 # Domain modules (sensors, perception, radar, fusion, safety, control, L3, RL)
-└── docs/                    # ARCHITECTURE.md, failure analysis, runbook, acceptance notes
+├── launch_carla.bat         # Server launcher + readiness gate
+├── modules/                 # 72 domain modules (sensors, perception, radar, fusion, safety, control, L3, RL)
+├── tests/                   # 22 unit-test modules; 16 of them run CARLA-free in CI
+├── scripts/
+│   ├── dataset/             # Capture, label review, audit and validation of the data-story sample
+│   ├── training/            # YOLO / traffic-light / DQN training and model export
+│   ├── demo/                # Demo runners (PowerShell) and the standalone perception pipeline
+│   └── tools/               # Server readiness probe, smoke tests, manifests, replay benchmark
+└── docs/                    # ARCHITECTURE.md, failure analysis, runbook, acceptance notes, benchmarks/
 ```
 
 > **Not tracked in git** (see `.gitignore`): virtual environments, datasets, downloadable weights, runtime logs, telemetry CSVs, and vendored upstream repos (`scenario_runner/`, `ros-bridge/`, `rllib-integration/`, `transfuser/`).
@@ -328,12 +333,10 @@ No CARLA, no GPU, no weights required:
 ```bash
 python -m pip install -r requirements-selftest.txt
 python selftest.py                 # 204 checks
-python -m unittest test_safety_geometry test_sensor_sync test_runtime_cleanup \
-  test_runtime_report test_perception_contracts test_decision_trace \
-  test_pipeline_metrics test_inference_telemetry test_neural_decoupling \
-  test_runtime_config test_dataset_labels test_validate_dataset \
-  test_audit_training_dataset test_image_quality test_launch_carla \
-  test_carla_probe                 # 189 tests
+python -m unittest tests.test_audit_training_dataset tests.test_carla_probe tests.test_dataset_labels \
+  tests.test_decision_trace tests.test_image_quality tests.test_inference_telemetry tests.test_launch_carla \
+  tests.test_neural_decoupling tests.test_perception_contracts tests.test_pipeline_metrics tests.test_runtime_cleanup \
+  tests.test_runtime_config tests.test_runtime_report tests.test_safety_geometry tests.test_sensor_sync tests.test_validate_dataset   # 189 tests
 ruff check .
 mypy
 ```
@@ -343,8 +346,8 @@ Requires a running CARLA server:
 ```bash
 python run_scenarios.py            # curated seeded core suite → logs/scenario_test_report.json
 python run_scenarios.py --scenarios core --weathers clear,light_rain,heavy_rain,fog,storm
-python -m unittest test_ego_control test_junction_route test_road_waypoints \
-  test_sensor_runtime test_capture_lifecycle test_dataset_capture
+python -m unittest tests.test_capture_lifecycle tests.test_dataset_capture tests.test_ego_control \
+  tests.test_junction_route tests.test_road_waypoints tests.test_sensor_runtime
 ```
 
 GitHub Actions runs four gates on every push: ruff, mypy, `selftest.py`, and the
