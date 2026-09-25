@@ -10,7 +10,9 @@ Một kịch bản ĐẠT khi:
      A number named after a safety event that cannot fail a run reads as a
      check that was done; it is now a check that is done.
 
-A collision count that is missing is a failure, not zero.
+A collision count that is missing is a failure, not zero. A profile with no
+declared expected ODD is INVALID - it used to default to the observed state,
+which graded the monitor against itself.
 
 Default report title is project-neutral. It previously read "Mercedes-Benz DRIVE
 PILOT L3 Validation Report", which presents a student simulation as a validation
@@ -26,9 +28,13 @@ import datetime
 def assess_profile(name, expect_odd, actual_odd, kpi_summary,
                    mrm_triggered, tor_count, false_disengagements, late_braking_events):
     reasons = []
+    invalid = []
     ok = True
 
-    if actual_odd != expect_odd:
+    if expect_odd not in ("NORMAL", "DEGRADED", "VIOLATION"):
+        ok = False
+        invalid.append(f"expected ODD not declared or unknown: {expect_odd!r}")
+    elif actual_odd != expect_odd:
         ok = False
         reasons.append(f"ODD sai: kỳ vọng {expect_odd}, thực tế {actual_odd}")
 
@@ -36,7 +42,7 @@ def assess_profile(name, expect_odd, actual_odd, kpi_summary,
     collisions = _count(raw_collisions)
     if collisions is None:
         ok = False
-        reasons.append("collision count was not observed" if raw_collisions is None
+        invalid.append("collision count was not observed" if raw_collisions is None
                        else f"collision count is not a valid count: {raw_collisions!r}")
     elif collisions > 0:
         ok = False
@@ -66,8 +72,10 @@ def assess_profile(name, expect_odd, actual_odd, kpi_summary,
         "false_disengagements": int(false_disengagements),
         "late_braking_events": int(late_braking_events),
         "kpi": kpi_summary,
+        "status": "FAIL" if reasons else "INVALID" if invalid else "PASS",
         "pass": ok,
-        "reasons": reasons,
+        "reasons": reasons + invalid,
+        "invalid_reasons": invalid,
     }
 
 
@@ -119,7 +127,10 @@ def build_report(results, title="CARLA L3 ODD / MRM validation report (simulatio
     core_ready = len(core_results) >= 18 and not core_missing
 
     valid_results = [r for r in cases if r.get("triggered", True)]
-    collision_counts = [_count(r.get("collisions")) for r in valid_results]
+    # Scenario rows carry "collisions"; L3 profile rows carry it in "kpi".
+    collision_counts = [_count(r["collisions"] if "collisions" in r
+                               else (r.get("kpi") or {}).get("collisions"))
+                        for r in valid_results]
     if not valid_results:
         collision_free = None           # nothing ran; "no collisions" would be vacuous
     elif any(c is None for c in collision_counts):
@@ -129,13 +140,62 @@ def build_report(results, title="CARLA L3 ODD / MRM validation report (simulatio
 
     catalog_ready = len(cases) >= 45
     core_all_pass = all(r.get("pass") is True for r in core_results)
-    if duplicate_rows:
+
+    # Case statuses. Rows written before statuses existed (the published
+    # reports) have only `pass`; they are read as PASS/FAIL, so their verdicts
+    # do not change.
+    statuses = [case_status(r) for r in cases]
+    counts = {k: statuses.count(k) for k in ("PASS", "FAIL", "INVALID", "ERROR")}
+    planned = list((meta or {}).get("planned_case_ids") or [])
+    attempted_ids = {case_id(r) for r in cases}
+    not_run = sorted(set(planned) - attempted_ids) if planned else []
+    unexpected = sorted(attempted_ids - set(planned)) if planned else []
+    suite = {
+        "planned": len(planned) if planned else None,
+        "attempted": len(cases),
+        "completed": len(cases) - counts["ERROR"],
+        "valid": counts["PASS"] + sum(1 for r, st in zip(cases, statuses)
+                                      if st == "FAIL" and not r.get("invalid_reasons")),
+        "passed": counts["PASS"],
+        "failed": counts["FAIL"],
+        "invalid": counts["INVALID"],
+        "error": counts["ERROR"],
+        "not_run": len(not_run) if planned else None,
+        "not_run_case_ids": not_run,
+        "unexpected_case_ids": unexpected,
+        "duplicate_case_rows": duplicate_rows,
+        "pass_rate_denominators": {
+            "passed_over_planned": (f"{counts['PASS']}/{len(planned)}" if planned else None),
+            "passed_over_attempted": f"{counts['PASS']}/{len(cases)}",
+        },
+    }
+    report["suite"] = suite
+
+    policy = (meta or {}).get("suite_policy", "core_plus_catalog")
+    if duplicate_rows or unexpected:
         status = "INVALID"
+    elif policy == "all_planned_cases":
+        # A suite that is not the 45-case catalog (e.g. 6 core x 5 weathers)
+        # is judged against its own planned matrix, not a hard-coded 18/45.
+        if not planned:
+            status = "NOT_EVALUATED"
+        elif counts["FAIL"]:
+            status = "FAIL"
+        elif counts["ERROR"] or counts["INVALID"]:
+            status = "INVALID"
+        elif not_run:
+            status = "NOT_EVALUATED"
+        else:
+            status = "PASS" if collision_free is True else "NOT_EVALUATED"
     elif core_ready and catalog_ready:
         status = ("PASS" if collision_free is True and core_all_pass and case_passed >= 43
                   else "FAIL")
     else:
         status = "NOT_EVALUATED"
+    # Whatever the policy, an ERROR/INVALID case or an unrun planned case
+    # cannot sit under an overall PASS.
+    if status == "PASS" and (counts["ERROR"] or counts["INVALID"] or not_run):
+        status = "INVALID" if (counts["ERROR"] or counts["INVALID"]) else "NOT_EVALUATED"
 
     report["acceptance_gate"] = {
         "core": {
@@ -151,6 +211,7 @@ def build_report(results, title="CARLA L3 ODD / MRM validation report (simulatio
         },
         "duplicate_case_rows": duplicate_rows,
         "no_collision_in_valid_runs": collision_free,
+        "policy": policy,
         "status": status,
     }
     if meta:
@@ -159,15 +220,55 @@ def build_report(results, title="CARLA L3 ODD / MRM validation report (simulatio
 
 
 def write_report(path, results, title="CARLA L3 ODD / MRM validation report (simulation)", meta=None):
+    """Write atomically (temp file + replace), with NaN/Infinity rejected.
+
+    A crash mid-write can no longer leave a truncated report, and a checkpoint
+    written after every case keeps the finished cases if the server dies.
+    """
     report = build_report(results, title=title, meta=meta)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2, ensure_ascii=False)
+    text = json.dumps(_json_safe(report), indent=2, ensure_ascii=False, allow_nan=False)
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
     return report
 
 
+def case_id(result):
+    """Stable identifier of one planned (scenario, seed, weather, fault) case."""
+    name, seed, weather, fault = _case_key(result)
+    return f"{name}|seed={seed}|weather={weather}|fault={fault}"
+
+
+def case_status(result):
+    """PASS / FAIL / INVALID / ERROR for one row, legacy rows included."""
+    status = result.get("status")
+    if status in ("PASS", "FAIL", "INVALID", "ERROR"):
+        return status
+    return "PASS" if result.get("pass") is True else "FAIL"
+
+
+def exit_code_for(report):
+    """0 only for an overall PASS. FAIL 1, INVALID 2, NOT_EVALUATED 3."""
+    status = (report.get("acceptance_gate") or {}).get("status")
+    return {"PASS": 0, "FAIL": 1, "INVALID": 2}.get(status, 3)
+
+
+def _json_safe(obj):
+    if isinstance(obj, float):
+        return obj if obj == obj and obj not in (float("inf"), float("-inf")) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 def _case_key(result):
-    return (result.get("name"), result.get("seed"), result.get("weather"), result.get("fault"))
+    # L3 profile rows carry "profile", scenario rows carry "name".
+    name = result.get("name", result.get("profile"))
+    return (name, result.get("seed"), result.get("weather"), result.get("fault"))
 
 
 def _count(value):

@@ -8,6 +8,10 @@
   - max_jerk_ms3      : giật lớn nhất (chỉ số ÊM ÁI / comfort)
   - pct_time_state    : % thời gian ở mỗi trạng thái FSM
   - success           : có dữ liệu (frames > 0) và không va chạm
+  - status            : MEASURED, or NOT_EVALUATED when there are no frames
+
+max_decel/max_jerk are "comfort" values with samples above a magnitude cap
+removed; the raw maxima and the number of removed samples are reported too.
 
 Thuần stdlib -> test được không cần CARLA.
 """
@@ -87,6 +91,12 @@ class KpiRecorder:
         controlled_decel = [d for d in self.decel if 0.0 <= d <= self.decel_cap]
         controlled_jerk = [abs(j) for j in self.jerk if abs(j) <= self.jerk_cap]
         impact_spikes = sum(1 for d in self.decel if d > self.decel_cap)
+        # The cap is a MAGNITUDE filter. A sample above it is not proven to be a
+        # collision - the collision sensor is the evidence for that - so the raw
+        # values are reported next to the filtered ones, never replaced by them.
+        jerk_excluded = sum(1 for j in self.jerk if abs(j) > self.jerk_cap)
+        raw_decel = [d for d in self.decel if math.isfinite(d)]
+        raw_jerk = [abs(j) for j in self.jerk if math.isfinite(j)]
 
         lat = sorted(x for x in self.pipeline_latency_ms if x is not None)
         safety_lat = sorted(x for x in self.safety_latency_ms if x is not None)
@@ -102,6 +112,9 @@ class KpiRecorder:
 
         return {
             "scenario": self.scenario,
+            # Zero frames is not a measurement: every number below is then a
+            # placeholder, and `success` is False.
+            "status": "MEASURED" if n > 0 else "NOT_EVALUATED",
             "duration_s": round(n * self.dt, 2),
             "frames": n,
             "collisions": self.collisions,
@@ -109,7 +122,15 @@ class KpiRecorder:
             "min_ttc_s": round(min(finite_ttc), 2) if finite_ttc else None,
             "max_decel_ms2": round(max(controlled_decel), 2) if controlled_decel else 0.0,
             "max_jerk_ms3": round(max(controlled_jerk), 2) if controlled_jerk else 0.0,
-            "impact_decel_spikes": impact_spikes,   # số khung gai giảm tốc do va chạm
+            # Historical name. It counts samples with decel above the cap, which
+            # is not the same as an impact; see decel_samples_above_cap.
+            "impact_decel_spikes": impact_spikes,
+            "decel_samples_above_cap": impact_spikes,
+            "jerk_samples_above_cap": jerk_excluded,
+            "raw_max_decel_ms2": round(max(raw_decel), 2) if raw_decel else None,
+            "raw_max_abs_jerk_ms3": round(max(raw_jerk), 2) if raw_jerk else None,
+            "comfort_filter": {"decel_cap_ms2": self.decel_cap, "jerk_cap_ms3": self.jerk_cap,
+                               "basis": "magnitude only; not matched to collision timestamps"},
             "pipeline_latency_p50_ms": _pct(lat, 0.50),
             "pipeline_latency_p95_ms": _pct(lat, 0.95),
             "pipeline_latency_p99_ms": _pct(lat, 0.99),
@@ -118,7 +139,7 @@ class KpiRecorder:
             "inference_age_p95_ms": _pct(inference_age, 0.95),
             "gpu_memory_peak_mb": round(max(gpu_memory), 2) if gpu_memory else None,
             "sensor_availability": self.sensor_availability,
-            "mean_speed_kmh": round(3.6 * sum(self.speed) / max(1, n), 1),
+            "mean_speed_kmh": round(3.6 * sum(self.speed) / n, 1) if n else None,
             "max_speed_kmh": round(3.6 * max(self.speed), 1) if self.speed else 0.0,
             "pct_time_state": pct,
             # A run with no frames did not succeed; it did not happen.

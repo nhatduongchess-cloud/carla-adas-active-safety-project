@@ -192,7 +192,9 @@ class EgoControllerFaultBoundaryTests(unittest.TestCase):
         self.assert_full_brake()
 
     def test_healthy_custom_command_is_unchanged(self):
-        control = object()
+        # A valid command (the fixture was a bare object(); commands are now
+        # validated before the RPC, so the fixture has to be a command).
+        control = SimpleNamespace(throttle=0.4, steer=0.1, brake=0.0)
         expected_status = {"mode": "custom", "behavior_state": "CRUISE"}
         self.stack_cls.return_value.run_step.return_value = (control, expected_status)
         controller = self.controller()
@@ -211,6 +213,89 @@ class EgoControllerFaultBoundaryTests(unittest.TestCase):
         self.assertEqual(status["mode"], "l3_override")
         self.assertAlmostEqual(self.ego.apply_control.call_args.args[0].brake, 0.6)
         self.stack_cls.return_value.run_step.assert_not_called()
+
+
+class EgoControllerEvidenceRemediationTests(unittest.TestCase):
+    """WP01 of docs/CLAUDE_CARLA_EVIDENCE_REMEDIATION_20260925.md."""
+
+    # Borrow the fixtures rather than subclass, so the parent's tests are not
+    # collected and counted a second time.
+    setUp = EgoControllerFaultBoundaryTests.setUp
+    controller = EgoControllerFaultBoundaryTests.controller
+    assert_full_brake = EgoControllerFaultBoundaryTests.assert_full_brake
+
+    MRM = {"override": True, "state": "MRM_EXECUTING", "target_decel_ms2": 1.0, "hazard": True}
+
+    def sent(self):
+        return self.ego.apply_control.call_args.args[0]
+
+    def test_aeb_full_brake_during_mrm_reaches_the_vehicle(self):
+        controller = self.controller()
+        decision = SimpleNamespace(action="BRAKE", brake=1.0, state="EMERGENCY_BRAKE")
+        status = controller.apply(decision, self.MRM, "VIOLATION", 1)
+        self.assertEqual((self.sent().brake, self.sent().throttle), (1.0, 0.0))
+        self.assertEqual(status["brake_source"], "aeb")
+        self.assertEqual(status["requested"]["aeb_brake"], 1.0)
+        self.assertEqual(self.ego.apply_control.call_count, 1)
+
+    def test_stronger_mrm_request_wins_over_weaker_aeb(self):
+        controller = self.controller()
+        mrm = dict(self.MRM, target_decel_ms2=4.2)          # 0.7 on the pedal
+        decision = SimpleNamespace(action="BRAKE", brake=0.4, state="BRAKE_HOLD")
+        controller.apply(decision, mrm, "VIOLATION", 1)
+        self.assertAlmostEqual(self.sent().brake, 0.7)
+
+    def test_safe_stop_holds_and_never_engages_autopilot(self):
+        controller = self.controller()
+        controller.apply(normal_decision(), {"override": True, "state": "SAFE_STOP",
+                                             "hazard": True}, "VIOLATION", 1)
+        self.assertEqual((self.sent().brake, self.sent().hand_brake), (1.0, True))
+        self.assertFalse(any(call.args and call.args[0] is True
+                             for call in self.ego.set_autopilot.call_args_list))
+
+    def test_non_finite_aeb_request_becomes_full_brake_not_nan(self):
+        controller = self.controller()
+        decision = SimpleNamespace(action="BRAKE", brake=float("nan"), state="EMERGENCY_BRAKE")
+        controller.apply(decision, self.l3, "NORMAL", 1)
+        self.assertEqual(self.sent().brake, 1.0)
+
+    def test_invalid_custom_command_never_reaches_the_rpc(self):
+        for bad in ({"throttle": float("nan")}, {"steer": 3.0}, {"brake": -0.1},
+                    {"throttle": True}):
+            with self.subTest(bad=bad):
+                self.ego.reset_mock()
+                fields = dict(throttle=0.3, steer=0.0, brake=0.0, **bad)
+                control = SimpleNamespace(**fields)
+                self.stack_cls.return_value.run_step.side_effect = None
+                self.stack_cls.return_value.run_step.return_value = (control, {"mode": "custom"})
+                controller = self.controller()
+                status = controller.apply(normal_decision(), self.l3, "NORMAL", 1,
+                                          target_speed_kmh=20)
+                self.assertEqual(status["mode"], "custom_fault_safe_stop")
+                self.assertIn("invalid control command", status["control_error"])
+                self.assertIsNot(self.sent(), control)
+                self.assert_full_brake()
+
+    def test_brake_and_throttle_are_never_sent_together(self):
+        control = SimpleNamespace(throttle=0.5, steer=0.0, brake=0.2)
+        self.stack_cls.return_value.run_step.return_value = (control, {"mode": "custom"})
+        self.controller().apply(normal_decision(), self.l3, "NORMAL", 1, target_speed_kmh=20)
+        self.assertEqual((self.sent().throttle, self.sent().brake), (0.0, 0.2))
+
+    def test_sensor_loss_safe_stop_reports_an_rpc_failure_as_a_failure(self):
+        controller = self.controller()
+        self.ego.apply_control.side_effect = RuntimeError("server disconnected")
+        outcome = controller.sensor_loss_safe_stop("lidar timeout")
+        self.assertEqual(controller.mode, "custom_fault_safe_stop")
+        self.assertTrue(outcome["attempted"])
+        self.assertFalse(outcome["command_sent"])
+        self.assertIn("server disconnected", outcome["error"])
+
+    def test_sensor_loss_safe_stop_sends_full_brake_when_the_server_answers(self):
+        controller = self.controller()
+        outcome = controller.sensor_loss_safe_stop("lidar timeout")
+        self.assertTrue(outcome["command_sent"])
+        self.assert_full_brake()
 
 
 if __name__ == "__main__":

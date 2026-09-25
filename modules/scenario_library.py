@@ -50,6 +50,20 @@ class RunningScenario:
         self.min_clearance_m = math.inf
         self.clearance_basis = None
         self._bases_seen = []
+        # Errors are recorded, not swallowed. A scenario whose actor script or
+        # oracle raised cannot be judged; the runner marks the case INVALID.
+        self.errors = []
+        self.error_count = 0
+        # Actor states that could not be read while measuring. A clearance
+        # computed while an actor was unreadable is not a clearance.
+        self.measurement_errors = 0
+
+    MAX_ERRORS_KEPT = 20
+
+    def _record_error(self, where, frame, exc):
+        self.error_count += 1
+        if len(self.errors) < self.MAX_ERRORS_KEPT:
+            self.errors.append(f"{where} at frame {frame}: {type(exc).__name__}: {exc}")
 
     def _min_dist(self, ego):
         el = ego.get_location()
@@ -61,7 +75,7 @@ class RunningScenario:
                 al = a.get_location()
                 best = min(best, ((el.x - al.x) ** 2 + (el.y - al.y) ** 2) ** 0.5)
             except Exception:
-                pass
+                self.measurement_errors += 1
         return best
 
     def _min_clearance(self, ego):
@@ -75,7 +89,7 @@ class RunningScenario:
                 if gap < best:
                     best, basis = gap, how
             except Exception:
-                pass
+                self.measurement_errors += 1
         return best, basis
 
     def tick(self, frame, ego, world):
@@ -100,8 +114,8 @@ class RunningScenario:
                                  bool(self._reaction_condition(self, ego, world)))
                 if hazard_active:
                     self.hazard_frame = int(frame)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._record_error("scenario tick", frame, exc)
 
     def destroy(self, client):
         import carla
@@ -282,8 +296,8 @@ def _brake_all(sc, level=0.6, hard=False):
         try:
             a.set_autopilot(False)
             a.apply_control(_vc(brake=1.0 if hard else level, hand_brake=hard))
-        except Exception:
-            pass
+        except Exception as exc:
+            sc._record_error("actor brake command", None, exc)
 
 
 def _overlaps_ego_corridor(sc, ego, _world, corridor_half_m=1.75,
@@ -351,8 +365,8 @@ def _follow_leading_obstacle(world, ego, tm):
             try:
                 lead.set_autopilot(False)
                 lead.apply_control(_vc(brake=0.6))
-            except Exception:
-                pass
+            except Exception as exc:
+                sc._record_error("lead brake command", None, exc)
     return RunningScenario([lead, obstacle], trigger_distance=18.0, on_trigger=on_trigger)
 
 
@@ -396,8 +410,8 @@ def _dynamic_object(world, ego, tm):
         ctrl.speed = 1.6
         try:
             walker.apply_control(ctrl)
-        except Exception:
-            pass
+        except Exception as exc:
+            sc._record_error("walker crossing command", None, exc)
     # Khoảng cách Euclid lúc spawn ≈20.3m. Trigger ngay để walker bắt đầu băng
     # qua; nếu chờ 15m, VRU safety có thể dừng ego trước trigger và gây deadlock.
     return RunningScenario([walker], trigger_distance=22.0, on_trigger=cross)
@@ -456,8 +470,8 @@ def _cut_in(side, cut_in_distance_m=18.0, staged_speed_ms=6.0,
                     # side='left' -> cắt sang phải (True); side='right' -> cắt sang trái (False)
                     if not manual_cut:
                         tm.force_lane_change(a, side == 'left')
-                except Exception:
-                    pass
+                except Exception as exc:
+                    sc._record_error("cut-in lane change", None, exc)
 
         def continue_cut(sc, frame, e, w):
             if not manual_cut or not sc.triggered:

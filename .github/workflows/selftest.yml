@@ -74,6 +74,7 @@ jobs:
           tests.test_carla_probe
           tests.test_dataset_labels
           tests.test_decision_trace
+          tests.test_evidence_remediation
           tests.test_evidence_review
           tests.test_image_quality
           tests.test_inference_telemetry

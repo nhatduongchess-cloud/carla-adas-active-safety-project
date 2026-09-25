@@ -79,6 +79,7 @@ try:
     from runtime_cleanup import cleanup_runtime
     from decision_trace import DecisionTrace
     from probe_journal import RuntimeCrashJournal
+    from control_timing import ControlWindow, SimClock
     print("[System] ✅ Đã nạp thành công các module Nhận thức và An toàn!")
 except ModuleNotFoundError as e:
     print(f"[System] ❌ Lỗi nạp module: {e}. Hãy kiểm tra lại thư mục!")
@@ -147,6 +148,12 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
     stop_reason = "not_started"
     run_error = None
     run_pass = True
+    sensor_loss_fallback = None
+    l3_sm = None
+    # Measured control rate and simulation time, separate from configured Hz
+    # and from the HUD's fps_ema (see modules/control_timing.py).
+    control_window = ControlWindow()
+    sim_clock = SimClock(cfg.FIXED_DELTA)
     lane_source_counts = {"learned": 0, "map": 0}
     # Explicit observability: set only when the safety controller commands BRAKE.
     aeb_triggered = False
@@ -344,6 +351,7 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
             lane_overlay = None
             prev_t = time.perf_counter()
             loop_wall_started = time.perf_counter()
+            control_window.start(loop_wall_started)
             perception_runtime.start_measurement()
             # Freeze before runtime_context restores synchronous world settings.
             inference_window.callback(perception_runtime.stop_measurement)
@@ -366,6 +374,8 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                 crash_log.record_runtime('sensor.before', world=world, ego=ego_vehicle,
                                          carla_map=carla_map, loop_index=frame_count,
                                          controller_mode=ego_controller.mode)
+                # A TimeoutError here (async LiDAR wait) is handled by the
+                # `except TimeoutError` below: health + safe-stop attempt.
                 sensor_frame = sensor_rig.read(capture_timestamp)
                 crash_log.record_runtime('sensor.after', world=world, ego=ego_vehicle,
                                          carla_map=carla_map, loop_index=frame_count,
@@ -373,6 +383,16 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                                          lidar_time_s=sensor_frame.lidar_timestamp,
                                          camera_frame_id=sensor_frame.camera_frame_id)
                 w_frame = sensor_frame.frame_id
+                # Simulation-time step for the algorithms. In async mode a slow
+                # loop skips world frames, so the configured 0.025 s understated
+                # the real step (TOR window ran slow, closing speed was off).
+                # A long gap is not integrated as one normal step: the safety
+                # layer's rate history is reset and the configured step is used.
+                sim_dt, sim_dt_status = sim_clock.step(sensor_frame.lidar_timestamp)
+                algo_dt = sim_dt if sim_dt_status == "ok" else cfg.FIXED_DELTA
+                if sim_dt_status == "gap":
+                    active_safety.prev_nearest = float("inf")
+                l3_dt = cfg.FIXED_DELTA if sim_dt_status == "first" else sim_dt
                 rgb_frame = sensor_frame.rgb
                 point_cloud = sensor_frame.point_cloud
                 radar_data = sensor_frame.radar_measurement
@@ -509,12 +529,12 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                 ego_transform = ego_vehicle.get_transform()
                 ego_motion = ego_motion_tracker.update(ego_transform)
                 tracks = object_mot.update(
-                    fused_detections if fresh_inference else [], cfg.FIXED_DELTA,
+                    fused_detections if fresh_inference else [], algo_dt,
                     ego_motion=ego_motion, ego_speed_ms=ego_speed_ms,
                     radar_measurements=radar_targets, frame_id=w_frame,
                     radar_velocity_validated=radar_velocity_validated)
                 decision = active_safety.update(
-                    ego_speed_ms, fused_detections, lidar_obstacles, cfg.FIXED_DELTA,
+                    ego_speed_ms, fused_detections, lidar_obstacles, algo_dt,
                     tracks=tracks, path_points=control_path, lane_context=lane_context,
                     radar_targets=radar_safety_targets)
                 decision_trace.record(
@@ -548,7 +568,7 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                 # KHÔNG hề nới vùng an toàn — đúng điều tài liệu nói là có.
                 active_safety.set_conditions(conditions['mu'], odd['gap_multiplier'])
                 l3 = l3_sm.update(odd['state'], driver_takeover, ego_speed_ms,
-                                  conditions['mu'], cfg.FIXED_DELTA, critical=odd['critical'])
+                                  conditions['mu'], l3_dt, critical=odd['critical'])
 
                 # --- RL: tốc độ tuần hành theo MẬT ĐỘ giao thông (đường vắng nhanh, đông chậm) ---
                 threat = decision.threat or {}
@@ -594,6 +614,8 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                                          carla_map=carla_map, frame_id=w_frame,
                                          controller_mode=ego_controller.mode,
                                          control_status=control_status, read_control=True)
+                control_window.cycle(time.perf_counter(), sim_time_s=sensor_frame.lidar_timestamp,
+                                     frame_id=w_frame)
                 pipeline_latency_ms = (time.perf_counter() - pipeline_t0) * 1000.0
                 pipeline_metrics.record("safety_control", pipeline_latency_ms)
                 pipeline_metrics.sample_gpu_memory()
@@ -661,6 +683,27 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                            else 0.9 * fps_ema + 0.1 * inst_fps)
                 frame_count += 1
 
+    except TimeoutError as sensor_timeout:
+        # A sensor timeout (the async LiDAR wait in SensorRig.read) used to fall
+        # into the generic handler below: health never saw the loss and no stop
+        # was attempted. Inside the control loop, record the loss and try the
+        # safe stop while the server may still answer. "Attempted" is not
+        # "applied": the outcome records whether the command was sent.
+        stop_reason = "sensor_timeout"
+        run_error = f"TimeoutError: {sensor_timeout}"
+        if loop_wall_started is not None:
+            try:
+                health_monitor.next_frame()
+                health_monitor.observe("lidar", frame_count, time.monotonic(), False,
+                                       error=f"read timeout: {sensor_timeout}",
+                                       now_s=time.monotonic())
+            except Exception as health_error:
+                print(f"[Safety] Health record failed: {health_error}")
+            sensor_loss_fallback = ego_controller.sensor_loss_safe_stop(
+                f"sensor timeout: {sensor_timeout}")
+            print(f"[Safety] Sensor timeout -> safe stop attempted: {sensor_loss_fallback}")
+        else:
+            print(f"\n[System] Sensor timeout before the control loop: {sensor_timeout}")
     except KeyboardInterrupt:
         stop_reason = "keyboard_interrupt"
         print("\n[System] Dừng đột ngột bởi người dùng.")
@@ -672,6 +715,9 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
         traceback.print_exc()
         print("-" * 50)
     finally:
+        # Close the measured control window BEFORE teardown, so cleanup time
+        # can never be counted as control-loop time.
+        control_window.stop(time.perf_counter())
         cleanup_summary = cleanup_runtime(
             client=client, world=world, actors=actor_list, sensor_rig=sensor_rig,
             traffic_spawner=traffic_spawner, session=sync_session,
@@ -727,6 +773,18 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                     decision_trace_path=decision_trace_path,
                     cleanup_summary=cleanup_summary,
                     town_name=report_town_name,
+                    sensor_loss_fallback=sensor_loss_fallback,
+                    control_timing=control_window.summary(cfg.FPS, cfg.FIXED_DELTA),
+                    sim_clock=sim_clock.summary(),
+                    l3_summary=(None if l3_sm is None else {
+                        "final_state": l3_sm.state,
+                        "tor_events": l3_sm.tor_events,
+                        "takeover_events": l3_sm.takeover_events,
+                        "mrm_events": l3_sm.mrm_events,
+                        "takeover_input": ("simulated --driver-takeover flag"
+                                           if driver_takeover else "none"),
+                        "human_takeover_verified": False,
+                    }),
                 ),
             )
 

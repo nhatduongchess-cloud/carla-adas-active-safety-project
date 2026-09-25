@@ -6,8 +6,14 @@ nguyên tắc L3 (DRIVE PILOT chỉ được phép tự lái trong ODD đã đ�
     NORMAL     : visibility > 50m  và  μ >= 0.6
     DEGRADED   : 20m <= visibility <= 50m  hoặc  0.3 <= μ < 0.6  -> giảm tốc, tăng gap
     VIOLATION  : visibility < 20m  hoặc  μ < 0.3  (hoặc SNR quá thấp) -> kích Fallback L3
-    VIOLATION  : any of the three inputs not a finite number - an ODD that cannot be
-                 measured is not treated as satisfied (reason "odd_unmeasurable:...")
+    VIOLATION  : any of the three inputs missing, a bool/string, or not a finite
+                 number - an ODD that cannot be measured is not treated as
+                 satisfied (reason "odd_unmeasurable:...")
+
+"critical" (skip the TOR, go straight to MRM) is an ABSOLUTE threshold on the
+current estimate (visibility < 10 m or μ < 0.2), not a measured rate of
+degradation. visibility/μ/SNR are heuristic proxies from weather_model, not
+measured physics.
 
 Note on friction: weather_model.estimate_conditions produces μ in [0.4, 0.9], so the
 μ < 0.3 VIOLATION and μ < 0.2 critical branches are unreachable from weather in this
@@ -19,11 +25,14 @@ are right for a real vehicle, and are exercised by unit tests with injected μ o
 
 
 import math
+import numbers
+
+
 def _finite(value) -> bool:
-    try:
-        return math.isfinite(float(value))
-    except (TypeError, ValueError):
+    """A finite real number. A bool or a numeric string is not a measurement."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
         return False
+    return math.isfinite(float(value))
 
 
 class ODDMonitor:
@@ -42,9 +51,12 @@ class ODDMonitor:
         self.degraded_speed_cap = degraded_speed_cap_kmh
 
     def classify(self, conditions: dict, sensor_health=None) -> dict:
-        v = conditions["visibility_m"]
-        mu = conditions["mu"]
-        snr = conditions.get("snr", 1.0)
+        # A missing key is unmeasured, like NaN. SNR used to default to 1.0
+        # (perfect) when absent; weather_model always provides it, so absence
+        # means the source failed and must not read as a clean sensor.
+        v = conditions.get("visibility_m")
+        mu = conditions.get("mu")
+        snr = conditions.get("snr")
 
         range_redundancy_lost = bool(
             sensor_health and sensor_health.get("range_redundancy_lost"))
@@ -57,8 +69,12 @@ class ODDMonitor:
                         (("visibility_m", v), ("mu", mu), ("snr", snr))
                         if not _finite(value)]
 
-        if (range_redundancy_lost or unmeasurable or v < self.vis_violation
-                or mu < self.mu_violation or snr < self.snr_violation):
+        if range_redundancy_lost or unmeasurable:
+            state = self.VIOLATION
+            speed_cap = 0.0
+            gap_multiplier = 2.0
+        elif (v < self.vis_violation or mu < self.mu_violation
+              or snr < self.snr_violation):
             state = self.VIOLATION
             speed_cap = 0.0
             gap_multiplier = 2.0
@@ -75,11 +91,15 @@ class ODDMonitor:
             "state": state,
             "speed_cap_kmh": speed_cap,
             "gap_multiplier": gap_multiplier,
-            # "critical" = điều kiện tụt rất nhanh -> bỏ qua chờ TOR, vào MRM ngay.
+            # "critical" = điều kiện đã dưới ngưỡng tuyệt đối (visibility < 10 m
+            # hoặc μ < 0.2) hoặc mất toàn bộ range sensing -> bỏ qua chờ TOR, vào
+            # MRM ngay. It is an absolute threshold on the current value, not a
+            # rate of degradation: nothing here differentiates over time.
             # Unmeasurable is not critical on its own: it asks the driver to
             # take over (TOR) rather than skipping straight to an MRM.
-            "critical": range_redundancy_lost or v < 10.0 or mu < 0.2,
-            "reason": ("lidar_and_radar_unavailable" if range_redundancy_lost
+            "critical": range_redundancy_lost or (
+                not unmeasurable and (v < 10.0 or mu < 0.2)),
+            "reason": ("all_enabled_range_sensors_unavailable" if range_redundancy_lost
                        else "odd_unmeasurable:" + ",".join(unmeasurable) if unmeasurable
                        else None),
             "conditions": conditions,

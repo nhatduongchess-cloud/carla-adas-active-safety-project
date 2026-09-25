@@ -35,8 +35,9 @@ from weather_model import estimate_conditions
 from collision_sensor import CollisionSensor
 from kpi import KpiRecorder
 from ego_control import EgoController, spawn_ego_safe, destroy_all_actors
-from l3_report import write_report
-from scenario_acceptance import assess_scenario
+from l3_report import case_id, exit_code_for, write_report
+from scenario_acceptance import (REACTION_METRIC_VERSION, assess_scenario,
+                                 finalize_after_cleanup, reaction_timing)
 from fault_acceptance import assess_fault_behavior
 from weather_acceptance import assess_weather_behavior
 from sensor_sync import (retrieve_exact_frame, SensorSyncStats, warmup_sensor_streams,
@@ -142,11 +143,13 @@ def run_one(client, world, bp_lib, spec, shared, args):
     stage_metrics = PipelineMetrics({"safety_loop": cfg.SAFETY_DEADLINE_MS,
                                      "perception": cfg.PERCEPTION_DEADLINE_MS})
 
+    row = None
     reacted = braked = evaded = False
     odd_violation_seen = False
     mrm_seen = False
     odd_states_seen = set()
     first_reaction_frame = None
+    first_reaction_after_hazard_frame = None
     ttc_at_reaction = None
     distance_at_reaction = None
     source_at_reaction = None
@@ -300,7 +303,10 @@ def run_one(client, world, bp_lib, spec, shared, args):
             decision = safety.update(
                 speed, fused, obstacles, dt, tracks=tracks,
                 path_points=ego_path, lane_context=lane_context,
-                radar_targets=radar_safety_targets)
+                radar_targets=radar_safety_targets,
+                # An injected LiDAR loss produces [] obstacles; say it is no
+                # data, so it cannot release a latched brake as a clear road.
+                lidar_valid=lidar_ok)
             odd = odd_monitor.classify(conditions, health.summary())
             # Cùng lý do như chinh.py: ODD đổi thì vùng an toàn phải đổi theo.
             safety.set_conditions(conditions['mu'], odd['gap_multiplier'])
@@ -328,6 +334,9 @@ def run_one(client, world, bp_lib, spec, shared, args):
                 reacted = True
                 if scenario.triggered and first_reaction_frame is None:
                     first_reaction_frame = frame
+                if (scenario.hazard_frame is not None and frame >= scenario.hazard_frame
+                        and first_reaction_after_hazard_frame is None):
+                    first_reaction_after_hazard_frame = frame
                     ttc_at_reaction = (decision.threat or {}).get('ttc_s')
                     distance_at_reaction = (decision.threat or {}).get('distance_m')
                     source_at_reaction = (decision.threat or {}).get('source')
@@ -361,21 +370,34 @@ def run_one(client, world, bp_lib, spec, shared, args):
         centre_distance = scenario.min_actor_distance_m
         if not np.isfinite(centre_distance):
             centre_distance = None
-        reaction_delay_s = None
-        if scenario.hazard_frame is not None and first_reaction_frame is not None:
-            reaction_delay_s = max(0.0, (first_reaction_frame - scenario.hazard_frame) * dt)
+        # Reaction latency v2: measured to the first reaction at/after the
+        # hazard, never clamped (see scenario_acceptance.reaction_timing).
+        timing = reaction_timing(scenario.hazard_frame, first_reaction_frame,
+                                 first_reaction_after_hazard_frame, dt)
+        reaction_delay_s = timing["reaction_delay_s"]
         acceptance_kpi = dict(summary)
         acceptance_kpi["min_distance_m"] = actor_clearance
+        scenario_errors = list(scenario.errors)
+        if scenario.error_count > len(scenario.errors):
+            scenario_errors.append(f"... {scenario.error_count - len(scenario.errors)} more")
+        if scenario.measurement_errors:
+            scenario_errors.append(
+                f"actor state unreadable on {scenario.measurement_errors} measurement(s); "
+                "clearance/trigger distance incomplete")
         verdict = assess_scenario(
             spec.name, spec.category, acceptance_kpi,
-            triggered=scenario.hazard_frame is not None, reacted=reacted,
+            triggered=scenario.hazard_frame is not None,
+            reacted=timing["reacted_to_hazard"],
             reaction_delay_s=reaction_delay_s, braked=braked, evaded=evaded,
-            sensor_frame_errors=sync_stats.frame_errors)
+            sensor_frame_errors=sync_stats.frame_errors,
+            scenario_errors=scenario_errors)
         passed, reasons = verdict["pass"], verdict["reasons"]
+        status = verdict["status"]
         fault_verdict = assess_fault_behavior(
             args.fault, health.summary(), odd_violation_seen, mrm_seen)
         if not fault_verdict["pass"]:
             passed = False
+            status = "FAIL"
             reasons = list(reasons) + fault_verdict["reasons"]
         # Weather and sensor-fault acceptance are orthogonal.  Confirmed loss
         # of both range sensors must cause ODD VIOLATION/MRM even in clear
@@ -389,12 +411,13 @@ def run_one(client, world, bp_lib, spec, shared, args):
             external_violation_expected=external_violation_expected)
         if not weather_verdict["pass"]:
             passed = False
+            status = "FAIL"
             reasons = list(reasons) + weather_verdict["reasons"]
 
         print(f"  [{spec.name}] collisions={collisions} reacted={reacted} "
               f"aeb={braked} braked={braked} evaded={evaded} minTTC={summary['min_ttc_s']} "
               f"minDist={summary['min_distance_m']} -> {'PASS' if passed else 'FAIL'}")
-        return {
+        row = {
             "profile": spec.name, "name": spec.name, "category": spec.category,
             "tests": spec.tests, "collisions": collisions, "reacted": reacted,
             "braked": braked, "aeb_triggered": braked, "evaded": evaded,
@@ -411,6 +434,11 @@ def run_one(client, world, bp_lib, spec, shared, args):
             "hazard_frame": scenario.hazard_frame,
             "first_reaction_frame": first_reaction_frame,
             "reaction_delay_s": reaction_delay_s,
+            "reaction_metric_version": timing["reaction_metric_version"],
+            "preemptive_response": timing["preemptive_response"],
+            "first_reaction_minus_hazard_s": timing["first_reaction_minus_hazard_s"],
+            "first_reaction_after_hazard_frame": first_reaction_after_hazard_frame,
+            "reacted_any_time": reacted,
             "ttc_at_reaction_s": ttc_at_reaction,
             "distance_at_reaction_m": distance_at_reaction,
             "source_at_reaction": source_at_reaction,
@@ -431,47 +459,62 @@ def run_one(client, world, bp_lib, spec, shared, args):
             "last_control_status": last_control_status,
             "stage_metrics": stage_metrics.summary(),
             "criteria": verdict["criteria"],
+            "status": status,
+            "invalid_reasons": verdict["invalid_reasons"],
+            "scenario_errors": scenario_errors,
             "pass": passed, "reasons": reasons,
         }
+        return row
 
     except Exception as e:
         reason = f"{type(e).__name__}: {e}"
         print(f"  [{spec.name}] LỖI: {reason}")
         traceback.print_exc()
-        return {"profile": spec.name, "name": spec.name, "category": spec.category,
-                "tests": spec.tests, "collisions": -1, "pass": False,
-                "reasons": [reason]}
+        # An exception is an ERROR, not a failed ADAS case and not a collision:
+        # collisions are None (unknown), never a sentinel like -1.
+        row = {"profile": spec.name, "name": spec.name, "category": spec.category,
+               "tests": spec.tests, "collisions": None, "pass": False,
+               "status": "ERROR", "seed": args.seed, "weather": args.weather,
+               "fault": args.fault, "reasons": [reason]}
+        return row
     finally:
-        try:
-            restore_traffic_lights(light_snapshot)
-        except Exception as exc:
-            print(f"  [{spec.name}] Cảnh báo khôi phục đèn: {exc}")
+        # The verdict is final only after cleanup. Every failure below is
+        # collected and attached to the returned row (same dict object), so a
+        # teardown failure after a passing scenario fails the case instead of
+        # being a console warning.
+        cleanup_errors = []
+
+        def _cleanup(what, action):
+            try:
+                action()
+            except Exception as exc:
+                cleanup_errors.append(f"{what}: {type(exc).__name__}: {exc}")
+                print(f"  [{spec.name}] Cleanup {what} failed: {exc}")
+
+        _cleanup("restore traffic lights", lambda: restore_traffic_lights(light_snapshot))
         if inference_scheduler is not None:
-            inference_scheduler.close()
+            _cleanup("inference scheduler", inference_scheduler.close)
         if scenario is not None:
-            try:
-                scenario.destroy(client)
-            except Exception as exc:
-                print(f"  [{spec.name}] Cảnh báo dọn scenario: {exc}")
+            _cleanup("scenario actors", lambda: scenario.destroy(client))
         for s in (camera, lidar, radar):
-            try:
-                if s is not None and s.is_alive:
-                    s.stop()
-            except Exception as exc:
-                print(f"  [{spec.name}] Cảnh báo dừng sensor: {exc}")
+            if s is not None:
+                _cleanup(f"stop {getattr(s, 'type_id', 'sensor')}",
+                         lambda s=s: s.stop() if s.is_alive else None)
         if collision is not None:
-            try:
-                collision.stop()
-            except Exception as exc:
-                print(f"  [{spec.name}] Cảnh báo dừng collision sensor: {exc}")
+            _cleanup("stop collision sensor", collision.stop)
         if actors:
-            try:
-                client.apply_batch([carla.command.DestroyActor(a) for a in actors])
+            def _destroy_owned():
+                responses = client.apply_batch_sync(
+                    [carla.command.DestroyActor(a) for a in actors], False)
+                failed = [r.error for r in responses if getattr(r, "error", None)]
                 # Vài tick để CARLA thực sự hủy actor trước khi kịch bản sau spawn lại.
                 for _ in range(4):
                     world.tick()
-            except Exception as exc:
-                print(f"  [{spec.name}] Cảnh báo dọn actor/tick sau mất kết nối: {exc}")
+                if failed:
+                    raise RuntimeError(f"{len(failed)} destroy command(s) failed: {failed[:3]}")
+            _cleanup("destroy owned actors", _destroy_owned)
+        if row is not None:
+            finalize_after_cleanup(row, cleanup_errors)
 
 
 def main():
@@ -591,24 +634,11 @@ def main():
                 "CARLA synchronous-mode setup failed after recovery tick: "
                 f"apply={apply_error}; recovery={recovery_error}") from apply_error
 
-    results = []
-    try:
-        for run_seed in seeds:
-            args.seed = run_seed
-            np.random.seed(run_seed)
-            for run_weather in weathers:
-                args.weather = run_weather
-                for spec in specs:
-                    print(f"[Scn] === {spec.name} ({spec.category}) | "
-                          f"seed={run_seed} weather={run_weather} fault={args.fault} ===")
-                    results.append(run_one(client, world, bp_lib, spec, shared, args))
-    finally:
-        try:
-            client.get_trafficmanager(cfg.TM_PORT).set_synchronous_mode(False)
-        except Exception:
-            pass
-        world.apply_settings(original)
-
+    # The planned matrix is fixed BEFORE anything runs, so a case that never
+    # ran is reported as NOT_RUN rather than silently missing.
+    planned_case_ids = [case_id({"name": spec.name, "seed": run_seed,
+                                 "weather": run_weather, "fault": args.fault})
+                        for run_seed in seeds for run_weather in weathers for spec in specs]
     meta = {
         "seeds": seeds,
         "weathers": weathers,
@@ -621,6 +651,13 @@ def main():
         "seconds_per_scenario": args.seconds,
         "fps": cfg.FPS,
         "suite": args.scenarios,
+        # The 45-case catalog keeps the project's 18/18 core + 43/45 catalog
+        # policy; every other matrix must pass every planned case.
+        "suite_policy": ("core_plus_catalog" if args.scenarios == "all" and not args.category
+                         and not args.limit else "all_planned_cases"),
+        "planned_case_ids": planned_case_ids,
+        "reaction_metric_version": REACTION_METRIC_VERSION,
+        "clearance_metric": "surface-to-surface 2D footprint (modules/clearance.py)",
         "thresholds": {
             "critical_ttc_s": cfg.CRITICAL_TTC_S,
             "warning_ttc_s": cfg.WARNING_TTC_S,
@@ -631,23 +668,73 @@ def main():
         "acceptance_criteria": {
             "scenario_triggered": "== true",
             "collisions": "== 0",
-            "reacted": "== true after trigger",
-            "reaction_delay_s": "<= 1.0",
-            "min_clearance_m": ">= 0.25 when measurable",
+            "reacted": "== true at or after the hazard frame",
+            "reaction_delay_s": "<= 1.0 (metric v2: first reaction at/after hazard, not clamped)",
+            "min_clearance_m": ">= 0.25 when measurable (surface-to-surface)",
             "sensor_frame_errors": "== 0",
             "cutin": "must command BRAKE or EVADE",
+            "cleanup": "verified per case",
         },
     }
-    report = write_report(args.report, results,
-                          title="CARLA ScenarioRunner Port — AEB/Avoidance Test Report",
-                          meta=meta)
-    s = report["summary"]
+    title = "CARLA ScenarioRunner Port — AEB/Avoidance Test Report (simulation)"
+
+    results = []
+    matrix_error = None
+    try:
+        for run_seed in seeds:
+            args.seed = run_seed
+            np.random.seed(run_seed)
+            for run_weather in weathers:
+                args.weather = run_weather
+                for spec in specs:
+                    print(f"[Scn] === {spec.name} ({spec.category}) | "
+                          f"seed={run_seed} weather={run_weather} fault={args.fault} ===")
+                    results.append(run_one(client, world, bp_lib, spec, shared, args))
+                    # Checkpoint after every case (atomic replace): if the
+                    # server dies, the finished cases survive and the rest
+                    # show up as NOT_RUN.
+                    write_report(args.report, results, title=title,
+                                 meta=dict(meta, partial=True))
+    except Exception as exc:
+        # Stop the matrix in a controlled way. The finished cases are kept;
+        # nothing is retried and no remaining case is counted as passed.
+        matrix_error = f"{type(exc).__name__}: {exc}"
+        print(f"[Scn] Matrix stopped: {matrix_error}")
+        traceback.print_exc()
+    finally:
+        restore_errors = []
+        try:
+            client.get_trafficmanager(cfg.TM_PORT).set_synchronous_mode(False)
+        except Exception as exc:
+            restore_errors.append(f"traffic manager sync off: {exc}")
+        try:
+            world.apply_settings(original)
+        except Exception as exc:
+            restore_errors.append(f"restore world settings: {exc}")
+
+    final_meta = dict(meta, partial=matrix_error is not None,
+                      matrix_error=matrix_error, suite_restore_errors=restore_errors)
+    try:
+        report = write_report(args.report, results, title=title, meta=final_meta)
+    except Exception as exc:
+        print(f"[Scn] REPORT NOT WRITTEN ({args.report}): {type(exc).__name__}: {exc}")
+        return 4
+    code = exit_code_for(report)
+    if matrix_error is not None or restore_errors:
+        code = max(code, 2)
+    suite = report["suite"]
     print("\n============== SCENARIO TEST SUMMARY ==============")
-    print(f"  Kịch bản: {s['scenarios']} | ĐẠT: {s['passed']} | TRƯỢT: {s['failed']} "
-          f"| Tỉ lệ: {s['pass_rate_pct']}%")
+    print(f"  Planned: {suite['planned']} | attempted: {suite['attempted']} | "
+          f"PASS: {suite['passed']} | FAIL: {suite['failed']} | INVALID: {suite['invalid']} "
+          f"| ERROR: {suite['error']} | NOT_RUN: {suite['not_run']}")
+    print(f"  Gate ({report['acceptance_gate']['policy']}): "
+          f"{report['acceptance_gate']['status']} | exit code {code}")
     print(f"  Báo cáo: {args.report}")
     print("==================================================")
+    return code
 
 
 if __name__ == '__main__':
-    main()
+    # Exit 0 only when the suite's acceptance gate PASSED. 1 FAIL, 2 INVALID
+    # (or the matrix/restore broke), 3 NOT_EVALUATED, 4 report not written.
+    sys.exit(main())

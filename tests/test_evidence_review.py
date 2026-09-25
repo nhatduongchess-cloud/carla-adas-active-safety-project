@@ -199,12 +199,17 @@ class TakeoverTests(unittest.TestCase):
         self.assertFalse(r["override"])
         self.assertFalse(r["hazard"])
 
-    def test_automation_returns_only_once_the_odd_is_normal(self):
+    def test_automation_returns_only_on_request_with_the_odd_normal(self):
+        # Stricter than the first fix, per WP03 of the remediation brief:
+        # a NORMAL ODD alone no longer re-engages automation by itself.
         m = L3StateMachine()
         m.update("VIOLATION", False, 10., .4, .025)
         m.update("VIOLATION", True, 10., .4, .025)
-        self.assertEqual(m.update("DEGRADED", False, 10., .5, .025)["state"], "DRIVER_CONTROL")
-        self.assertEqual(m.update("NORMAL", False, 10., .9, .025)["state"], "L3_ACTIVE")
+        self.assertEqual(m.update("DEGRADED", False, 10., .5, .025,
+                                  engage_request=True)["state"], "DRIVER_CONTROL")
+        self.assertEqual(m.update("NORMAL", False, 10., .9, .025)["state"], "DRIVER_CONTROL")
+        self.assertEqual(m.update("NORMAL", False, 10., .9, .025,
+                                  engage_request=True)["state"], "L3_ACTIVE")
 
 
 # ---------------------------------------------------------------------------
@@ -377,12 +382,15 @@ class ClearanceTests(unittest.TestCase):
 #     to hit a gate.
 #
 # brake_latch_then_missing_geometry -> BRAKE x5, then DRIVE
-#     Real and confirmed, but NOT fixed here. After a critical brake, five frames
-#     with an empty corridor release the latch, and during the hold the brake
-#     drops from 1.0 to 0.7. An empty corridor cannot be told apart from an
-#     obstacle that fell into the LiDAR's near-field blind zone. Any fix changes
-#     live AEB behaviour and has to be re-validated on the simulator before it
-#     ships; it is tracked as an open gap in ARCHITECTURE §12.
+#     The probe still prints this sequence, and that is now correct: it feeds
+#     five VALID empty frames, and a clear corridor observed for 0.1 s is the
+#     release rule (same cadence as before at 40 Hz). What was fixed in the
+#     follow-up (tests/test_evidence_remediation.py, BrakeReleaseEvidenceTests):
+#     frames WITHOUT valid LiDAR data now hold the brake indefinitely, the hold
+#     no longer drops 1.0 -> 0.7, and release is timed in seconds, not frames.
+#     Still open: an obstacle in the LiDAR near-field blind zone produces a
+#     valid empty corridor, which no rule at this layer can tell from a clear
+#     road. Live AEB behaviour with the new rule is NOT_RUN on the simulator.
 #
 # empty_suite_gate -> NOT_EVALUATED
 #     The status was already right; only the vacuous "no collision" claim was

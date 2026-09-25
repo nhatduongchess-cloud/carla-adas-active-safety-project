@@ -18,6 +18,12 @@ xử lý dứt khoát (né hoặc DỪNG HẲN) với vật TĨNH kể cả ở 
 SLOW rồi trôi tới. Phanh đã chốt còn được GIỮ qua vài khung mất dấu (latch) để vật
 thấp/thưa (cọc công trường) cho cụm LiDAR chớp tắt không làm nhả phanh sớm.
 
+Brake release needs evidence: a latched brake is released only after a clear
+corridor has been OBSERVED on valid LiDAR frames for ``clear_confirm_s``, or when
+a visible threat moves beyond the exit hysteresis. Frames without valid LiDAR
+data hold the brake at its latched level. Limitation that remains: an obstacle
+inside the LiDAR near-field blind zone also produces a valid empty corridor.
+
 Lớp này là LOGIC THUẦN (không import carla): nhận số liệu, trả về một quyết định.
 chinh.py mới là nơi dịch quyết định thành lệnh CARLA/Traffic Manager.
 """
@@ -120,6 +126,15 @@ class ActiveSafetySystem:
         # trường cho cụm LiDAR chớp tắt) -> không nhả phanh rồi lao tới.
         self.lost_frames_tol = 4
         self._lost_frames = 0
+        # Release is by TIME of observed clear path, not frame count: "4 frames"
+        # meant 0.1 s at 40 Hz and 0.67 s at 6 Hz. 0.1 s keeps the historical
+        # behaviour at the nominal 40 Hz (release on the 5th clear frame).
+        self.clear_confirm_s = self.lost_frames_tol * 0.025
+        self._clear_observed_s = 0.0
+        # The brake level last emitted while latched. Missing data holds it;
+        # it cannot be weakened by frames that carry no evidence.
+        self._latched_level = 0.0
+        self.last_transition_reason = None
 
         self.prev_nearest: float = math.inf  # cho ước lượng tốc độ tiến lại gần
 
@@ -284,7 +299,15 @@ class ActiveSafetySystem:
         path_points=None,
         lane_context=None,
         radar_targets=None,
+        lidar_valid: bool = True,
     ) -> SafetyDecision:
+        """One safety decision.
+
+        ``lidar_valid`` says whether ``lidar_obstacles`` came from a fresh,
+        successfully processed LiDAR frame. An empty list with
+        ``lidar_valid=False`` is *no data*, not an empty road, and never
+        releases a latched brake.
+        """
         corridor_nearest, _obs, gaps = self._scan_corridors(lidar_obstacles, path_points)
         left_clear = self._lane_change_clear(
             "left", gaps, tracks, path_points, lane_context, ego_speed_ms)
@@ -335,23 +358,44 @@ class ActiveSafetySystem:
             decision.action = "BRAKE"
             decision.brake = level
             decision.collision_risk = True
+            if self._brake_latched:
+                self._latched_level = level
 
         if not math.isfinite(nearest):
-            # MẤT DẤU vật cản. Nếu ĐANG chốt phanh, giữ thêm vài khung phòng khi cụm
-            # LiDAR của vật thấp/thưa (cọc công trường) chớp tắt -> KHÔNG nhả phanh
-            # rồi lao tới. Chỉ thực sự trở về lái thường khi mất dấu đủ lâu.
-            if self._brake_latched and self._lost_frames < self.lost_frames_tol:
-                self._lost_frames += 1
-                _emit_brake("BRAKE_HOLD", 0.7)
-                return decision
+            # MẤT DẤU vật cản. Nếu ĐANG chốt phanh, giữ phanh cho tới khi đường
+            # trống được QUAN SÁT hợp lệ đủ lâu (clear_confirm_s).
+            #
+            # Two rules from the 2026-09-25 evidence review (open gap G9):
+            #  - a frame with no valid LiDAR data is not evidence that the
+            #    obstacle left, so it never counts toward release;
+            #  - holding does not weaken the brake. It used to drop from 1.0 to
+            #    0.7 on the first empty frame after a critical stop.
+            if self._brake_latched:
+                if not lidar_valid:
+                    self._clear_observed_s = 0.0
+                    self.last_transition_reason = "hold: no valid lidar observation"
+                    _emit_brake("BRAKE_HOLD_NO_DATA", self._latched_level or 1.0)
+                    return decision
+                if math.isfinite(dt) and dt > 0.0:
+                    self._clear_observed_s += dt
+                if self._clear_observed_s <= self.clear_confirm_s + 1e-9:
+                    self._lost_frames += 1
+                    self.last_transition_reason = "hold: confirming clear path"
+                    _emit_brake("BRAKE_HOLD", self._latched_level or 1.0)
+                    return decision
+                self.last_transition_reason = (
+                    f"release: clear path observed for {self._clear_observed_s:.3f} s")
             self.prev_nearest = math.inf
             self._brake_latched = False
+            self._latched_level = 0.0
+            self._clear_observed_s = 0.0
             self._evade_dir = None
             self._evade_frames_left = 0
             self._evade_origin_lane_id = None
             self._lost_frames = 0
             return decision  # NORMAL / DRIVE
         self._lost_frames = 0
+        self._clear_observed_s = 0.0
 
         # Khoảng cách an toàn động = quãng đường dừng (theo μ) × hệ số thời tiết + đệm.
         brake_dist = stopping_distance(ego_speed_ms, self.mu, self.reaction_time)
@@ -394,6 +438,8 @@ class ActiveSafetySystem:
         if self._brake_latched:
             if is_clear:
                 self._brake_latched = False
+                self._latched_level = 0.0
+                self.last_transition_reason = "release: threat beyond exit hysteresis"
             else:
                 _emit_brake("EMERGENCY_BRAKE" if critical else "BRAKE_HOLD",
                             1.0 if critical else 0.7)

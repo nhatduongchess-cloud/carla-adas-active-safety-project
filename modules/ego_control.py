@@ -2,6 +2,8 @@
 
 Tách ra để chinh.py / evaluate_l3.py / run_scenarios.py không lặp lại logic. Ưu
 tiên: latched custom fault > L3 override (MRM) > AEB (BRAKE) > custom control.
+Inside the L3 override the brake is max(MRM, AEB), never MRM alone. Every
+command is validated before the RPC; throttle is zero whenever brake > 0.
 Fault latch vẫn giữ hand brake khi L3 yêu cầu SAFE_STOP. Traffic Manager chỉ là
 chế độ opt-in; custom-control fault phải safe-stop, không được tự bật autopilot.
 """
@@ -10,11 +12,13 @@ chế độ opt-in; custom-control fault phải safe-stop, không được tự 
 import carla
 
 try:
-    from control_arbitration import longitudinal_override
+    from control_arbitration import (aeb_brake, command_problems, exclusive_pedals,
+                                     longitudinal_override)
     from ego_driving_stack import EgoDrivingStack
     from road_geometry import EgoRoute
 except ImportError:
-    from modules.control_arbitration import longitudinal_override
+    from modules.control_arbitration import (aeb_brake, command_problems, exclusive_pedals,
+                                             longitudinal_override)
     from modules.ego_driving_stack import EgoDrivingStack
     from modules.road_geometry import EgoRoute
 
@@ -169,6 +173,23 @@ class EgoController:
             status["control_error"] = self._custom_fault_error
         return status
 
+    def sensor_loss_safe_stop(self, reason):
+        """Latch the fault safe stop because a required sensor stopped delivering.
+
+        Returns the attempt outcome. A raised RPC error is recorded, not
+        swallowed into "stopped": if the server is gone, no brake was applied.
+        """
+        self.mode = "custom_fault_safe_stop"
+        self.custom = None
+        outcome = {"reason": str(reason), "attempted": True, "command_sent": False,
+                   "error": None}
+        try:
+            self._apply_custom_fault_safe_stop(error=reason)
+            outcome["command_sent"] = True
+        except Exception as exc:
+            outcome["error"] = f"{type(exc).__name__}: {exc}"
+        return outcome
+
     def apply(self, decision, l3, odd_state, frame, target_speed_kmh=None,
               traffic_control=None, turn_intent=None,
               respect_traffic_controls=True):
@@ -183,18 +204,33 @@ class EgoController:
             # AEB brake: see modules/control_arbitration.py.
             self._ensure_manual()
             command = longitudinal_override(l3, decision)
+            # Steer is held at 0 during an MRM/AEB override. That is an explicit
+            # degraded lateral fallback, not lane keeping: on a curve the car
+            # leaves the lane (open gap G10 in docs/ARCHITECTURE.md).
             ego.apply_control(carla.VehicleControl(
+                throttle=0.0, steer=0.0,
                 brake=command["brake"], hand_brake=command["hand_brake"]))
             set_hazard_lights(ego, True)
             status = {"mode": "l3_override", "behavior_state": l3['state'],
-                      "brake_source": command["source"]}
+                      "brake_source": command["source"],
+                      "requested": {"aeb_brake": command["aeb_brake"],
+                                    "mrm_brake": command["mrm_brake"]},
+                      "applied": {"throttle": 0.0, "steer": 0.0,
+                                  "brake": command["brake"],
+                                  "hand_brake": command["hand_brake"]},
+                      # apply_control is fire-and-forget: sent, not acknowledged.
+                      "command_sent": True}
             return status
 
         elif decision.action == "BRAKE":
             set_hazard_lights(ego, l3['hazard'])
             self._ensure_manual()
-            ego.apply_control(carla.VehicleControl(brake=decision.brake))
-            return {"mode": "aeb_override", "behavior_state": decision.state}
+            brake = aeb_brake(decision)
+            ego.apply_control(carla.VehicleControl(throttle=0.0, steer=0.0, brake=brake))
+            return {"mode": "aeb_override", "behavior_state": decision.state,
+                    "requested": {"aeb_brake": getattr(decision, "brake", None)},
+                    "applied": {"throttle": 0.0, "steer": 0.0, "brake": brake},
+                    "command_sent": True}
 
         set_hazard_lights(ego, l3['hazard'])
         if not self.uses_custom_control:
@@ -223,6 +259,14 @@ class EgoController:
                 traffic_light_state=signal.get("traffic_light_state", "green"),
                 stop_sign=bool(signal.get("stop_sign", False)),
                 respect_traffic_controls=respect_traffic_controls)
+            # Validate before the RPC: a NaN or out-of-range command from the
+            # stack is a control fault, handled by the safe stop below, never
+            # silently clamped and sent.
+            problems = command_problems(throttle=control.throttle, steer=control.steer,
+                                        brake=control.brake)
+            if problems:
+                raise ValueError("invalid control command: " + "; ".join(problems))
+            control.throttle = exclusive_pedals(control.throttle, control.brake)
             ego.apply_control(control)
             return status
         except Exception as exc:

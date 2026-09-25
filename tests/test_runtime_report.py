@@ -29,7 +29,10 @@ class RuntimeReportTests(unittest.TestCase):
                       health_monitor=NS(summary=lambda: {'availability': {'radar': 1.}}),
                       collision_sensor=NS(count=0, history=[]), sensor_sync_stats=NS(frame_errors=0),
                       radar_sync_stats=NS(frame_errors=0), cleanup_summary={'verified': True},
-                      lane_source_counts={'map': 40})
+                      lane_source_counts={'map': 40},
+                      # The rate gate reads the measured control window, not
+                      # fps_ema, so a passing fixture must carry a measurement.
+                      control_timing={'status': 'MEASURED', 'delivered_control_hz': 40.0})
         return RuntimeReportData(**values), pipeline
 
     def render(self, data):
@@ -67,6 +70,25 @@ class RuntimeReportTests(unittest.TestCase):
         data.duration_s = None
         data.frame_count = 0
         self.assertFalse(self.render(data)[0])
+
+    def test_rate_gate_uses_measured_control_rate_not_hud_ema(self):
+        """The published demo: fps_ema 44.9, frames / wall 20.0."""
+        data, _ = self.fixture()
+        data.fps_ema = 44.9
+        data.control_timing = {'status': 'MEASURED', 'delivered_control_hz': 20.0}
+        passed, report = self.render(data)
+        self.assertFalse(passed)
+        self.assertFalse(report['criteria']['delivered_control_hz_ge_95pct_target'])
+        self.assertEqual(report['run']['hud_fps_ema'], 44.9)
+
+    def test_unmeasured_control_rate_fails_rather_than_passing_on_ema(self):
+        for timing in (None, {'status': 'NOT_EVALUATED', 'delivered_control_hz': None},
+                       {'status': 'MEASURED', 'delivered_control_hz': float('nan')},
+                       {'status': 'MEASURED', 'delivered_control_hz': True}):
+            with self.subTest(timing=timing):
+                data, _ = self.fixture()
+                data.control_timing = timing
+                self.assertFalse(self.render(data)[0])
 
     def test_disabled_radar_is_not_applicable_rather_than_available(self):
         """A disabled radar used to report 100% availability and pass the

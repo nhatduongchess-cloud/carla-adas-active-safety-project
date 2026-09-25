@@ -85,6 +85,26 @@ class SensorHealthMonitor:
         return all(self.states[name].consecutive_misses > self.max_range_misses
                    for name in enabled)
 
+    @property
+    def all_enabled_range_unavailable(self) -> bool:
+        """Explicit name for `range_redundancy_lost`: no enabled range sensor
+        is delivering (or none is enabled). Same value; the old key is kept for
+        its existing consumers."""
+        return self.range_redundancy_lost
+
+    @property
+    def range_redundancy_degraded(self) -> bool:
+        """At least one enabled range sensor is lost but another still delivers.
+
+        Informational: the ODD does not change on it. With a single enabled
+        range sensor there is no redundancy to degrade, so this is False and
+        a loss shows up as `all_enabled_range_unavailable` instead.
+        """
+        enabled = self.range_sensors_enabled
+        lost = [name for name in enabled
+                if self.states[name].consecutive_misses > self.max_range_misses]
+        return bool(lost) and len(lost) < len(enabled)
+
     def availability(self, sensor: str):
         """Share of frames the sensor delivered, or None when it is disabled.
 
@@ -112,6 +132,11 @@ class SensorHealthMonitor:
                                    for name, state in self.states.items()},
             "missing_counts": dict(self.missing_counts),
             "range_redundancy_lost": self.range_redundancy_lost,
+            "all_enabled_range_unavailable": self.all_enabled_range_unavailable,
+            "range_redundancy_degraded": self.range_redundancy_degraded,
+            # The miss threshold counts loop frames, so its duration depends on
+            # the loop rate; recorded so a report can state it.
+            "max_range_misses_frames": self.max_range_misses,
             "range_redundancy_ever_lost": self.range_redundancy_loss_events > 0,
             "range_redundancy_loss_events": self.range_redundancy_loss_events,
         }

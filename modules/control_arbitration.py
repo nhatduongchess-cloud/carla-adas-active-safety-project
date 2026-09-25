@@ -24,6 +24,7 @@ fact that it, not the planner, is in charge.
 from __future__ import annotations
 
 import math
+import numbers
 from typing import Any, Mapping, Optional
 
 #: The MRM's requested deceleration (m/s^2) that maps to a full brake pedal.
@@ -73,4 +74,45 @@ def longitudinal_override(l3: Mapping[str, Any], decision: Any) -> Optional[dict
         "brake": max(mrm_brake, aeb_brake),
         "hand_brake": state == "SAFE_STOP",
         "source": "aeb" if aeb_brake > mrm_brake else "mrm",
+        # Both requests are kept so a trace can show what was asked for, not
+        # only what was selected.
+        "aeb_brake": aeb_brake,
+        "mrm_brake": mrm_brake,
     }
+
+
+def aeb_brake(decision: Any) -> float:
+    """The AEB brake request on the [0, 1] pedal scale, validated."""
+    return _unit(getattr(decision, "brake", 1.0))
+
+
+_LIMITS = {"throttle": (0.0, 1.0), "brake": (0.0, 1.0), "steer": (-1.0, 1.0)}
+
+
+def command_problems(**fields: Any) -> list:
+    """Why a control command must not reach the simulator, or [] if it may.
+
+    A bool is rejected even though Python treats it as an int: ``True`` is
+    not a measured pedal position. Nothing is clamped here - clamping a NaN
+    or a 7.0 into range hides the fault that produced it. The caller decides
+    what to do instead (the custom stack treats it as a control fault and
+    safe-stops).
+    """
+    problems = []
+    for name, value in fields.items():
+        low, high = _LIMITS[name]
+        if isinstance(value, bool) or not isinstance(value, numbers.Real):
+            problems.append(f"{name} is not a number: {value!r}")
+        elif not math.isfinite(float(value)):
+            problems.append(f"{name} is not finite: {value!r}")
+        elif not low <= value <= high:
+            problems.append(f"{name} {value!r} outside [{low}, {high}]")
+    return problems
+
+
+def exclusive_pedals(throttle: float, brake: float) -> float:
+    """Throttle to send given a brake: zero whenever the brake is applied.
+
+    Pressing both pedals is never a valid command; the brake wins.
+    """
+    return 0.0 if brake > 0.0 else throttle

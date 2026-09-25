@@ -42,6 +42,10 @@ class RuntimeReportData:
     decision_trace_path: Optional[str] = None
     cleanup_summary: Optional[Dict[str, Any]] = None
     town_name: Optional[str] = None
+    sensor_loss_fallback: Optional[Dict[str, Any]] = None
+    control_timing: Optional[Dict[str, Any]] = None
+    sim_clock: Optional[Dict[str, Any]] = None
+    l3_summary: Optional[Dict[str, Any]] = None
 
 
 def write_runtime_report(path: str, cfg: Any,
@@ -91,7 +95,11 @@ def write_runtime_report(path: str, cfg: Any,
         "radar_availability_ge_99_5pct": (
             None if not radar_enabled
             else radar_availability is not None and float(radar_availability) >= 0.995),
-        "real_time_loop_ge_38hz": float(data.fps_ema) >= cfg.FPS * 0.95,
+        # Measured: unique control updates over the active control window,
+        # not the HUD's fps_ema (the published demo had fps_ema 44.9 while
+        # frames / wall time was 20.0). Missing measurement fails.
+        "delivered_control_hz_ge_95pct_target": _delivered_rate_ok(
+            data.control_timing, cfg.FPS * 0.95),
         "safety_p99_le_25ms": _within_limit(safety_p99, cfg.SAFETY_DEADLINE_MS),
         "perception_p95_le_50ms": _within_limit(
             perception_p95, cfg.PERCEPTION_DEADLINE_MS),
@@ -126,12 +134,21 @@ def write_runtime_report(path: str, cfg: Any,
             "vehicles_requested": data.vehicles_requested,
             "vehicles_spawned": data.vehicles_spawned,
             "target_duration_s": data.duration_s,
-            "simulated_duration_s": round(data.frame_count / cfg.FPS, 3),
-            "wall_duration_s": (
+            # frames x configured step: what the run asked for. In async mode
+            # this is NOT simulated time; see control_timing.simulated_elapsed_s.
+            "frames_x_configured_step_s": round(data.frame_count / cfg.FPS, 3),
+            # Loop start to report creation, INCLUDING teardown. Not a control
+            # window; see control_timing.active_control_wall_s.
+            "wall_since_loop_start_incl_teardown_s": (
                 round(time.perf_counter() - data.loop_wall_started, 3)
                 if data.loop_wall_started is not None else None),
             "frames": data.frame_count,
-            "fps_ema": round(data.fps_ema, 3),
+            # HUD display value only (exponential moving average of the last
+            # intervals). Never an acceptance number.
+            "hud_fps_ema": round(data.fps_ema, 3),
+            "configured_fps": cfg.FPS,
+            "control_timing": data.control_timing,
+            "sim_clock": data.sim_clock,
             "headless": bool(data.no_display),
             "performance_profile": data.effective_performance,
         },
@@ -147,6 +164,10 @@ def write_runtime_report(path: str, cfg: Any,
         },
         "safety": {
             "aeb_triggered": bool(data.aeb_triggered),
+            # Null when no required sensor stopped delivering. Otherwise the
+            # attempt, whether the stop command was sent, and any RPC error.
+            "sensor_loss_fallback": data.sensor_loss_fallback,
+            "l3": data.l3_summary,
             "decision_trace": data.decision_trace_summary,
             "decision_trace_path": data.decision_trace_path,
         },
@@ -182,6 +203,20 @@ def write_runtime_report(path: str, cfg: Any,
     print(f"[System] Runtime report: {report_path} -> {report['status']}")
     print(f"[Safety] AEB triggered={str(bool(data.aeb_triggered)).lower()}")
     return run_pass
+
+
+def _delivered_rate_ok(timing, threshold_hz):
+    if not isinstance(timing, dict) or timing.get("status") != "MEASURED":
+        return False
+    return _at_least(timing.get("delivered_control_hz"), threshold_hz)
+
+
+def _at_least(value, threshold):
+    try:
+        measured = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return not isinstance(value, bool) and math.isfinite(measured) and measured >= threshold
 
 
 def _location(location: Any):

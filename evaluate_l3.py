@@ -97,7 +97,9 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
         precipitation_deposits=profile.get('precipitation_deposits', 0.0))
     odd = odd_monitor.classify(conditions)
     safety.set_conditions(conditions['mu'], odd['gap_multiplier'])
-    expect_odd = profile.get('expect_odd', odd['state'])
+    # A profile without a declared expectation is not graded against itself:
+    # defaulting to the observed state made the ODD check a tautology.
+    expect_odd = profile.get('expect_odd')
 
     # Sự kiện theo dõi.
     mrm_triggered = False
@@ -288,8 +290,11 @@ def main():
                 results.append(run_scenario(client, world, bp_lib, name, profiles[name], shared, args))
             except Exception as e:
                 print(f"  [{name}] LỖI: {e}")
-                results.append(assess_profile(name, profiles[name].get('expect_odd', '?'),
-                                              'ERROR', {"collisions": -1}, False, 0, 0, 0))
+                error_row = assess_profile(name, profiles[name].get('expect_odd'),
+                                           'ERROR', {"collisions": None}, False, 0, 0, 0)
+                error_row["status"] = "ERROR"
+                error_row["reasons"].append(f"{type(e).__name__}: {e}")
+                results.append(error_row)
     finally:
         try:
             client.get_trafficmanager(cfg.TM_PORT).set_synchronous_mode(False)
@@ -297,7 +302,30 @@ def main():
             pass
         world.apply_settings(original)
 
-    report = write_report(cfg.L3_REPORT_PATH, results)
+    # This harness is a component demonstration, not the full runtime. Say so
+    # in the artifact so its results are not quoted as full-stack validation.
+    meta = {
+        "harness": "evaluate_l3.py",
+        "suite_policy": "all_planned_cases",
+        "planned_case_ids": [f"{n}|seed=None|weather=None|fault=None" for n in names],
+        "tested_components": [
+            "weather_model -> ODDMonitor (weather proxies only, no sensor health)",
+            "L3StateMachine (TOR / MRM / SAFE_STOP)",
+            "ActiveSafetySystem on LiDAR geometry (extract_obstacles)",
+            "EgoController arbitration (MRM/AEB)",
+        ],
+        "excluded_components": [
+            "chinh.py runtime: async-stable sensor rig, LatestFrameScheduler, freshness gates",
+            "SensorHealthMonitor / range-loss escalation",
+            "radar",
+            "learned lane path",
+            "control-rate / timing measurement",
+        ],
+        "takeover_input": ("simulated --driver-takeover flag; human_takeover_verified=false"
+                           if args.driver_takeover else "none"),
+        "notes": "Detection runs blocking every DETECT_EVERY_N frames here, unlike the runtime.",
+    }
+    report = write_report(cfg.L3_REPORT_PATH, results, meta=meta)
     s = report["summary"]
     print("\n================ L3 VALIDATION SUMMARY ================")
     print(f"  Kịch bản: {s['scenarios']} | ĐẠT: {s['passed']} | TRƯỢT: {s['failed']} "

@@ -476,7 +476,10 @@ for _ in range(200):                                        # 20 s, beyond the T
     r = sm3.update("VIOLATION", False, 10.0, 0.4, 0.1)
 check("tai xe dang lai -> khong bao gio vao MRM", r["state"] == "DRIVER_CONTROL")
 r = sm3.update("NORMAL", False, 10.0, 0.9, 0.1)
-check("ODD ve NORMAL -> L3 san sang lai", r["state"] == "L3_ACTIVE")
+check("ODD ve NORMAL -> KHONG tu bat lai L3 khi chua co yeu cau",
+      r["state"] == "DRIVER_CONTROL")
+r = sm3.update("NORMAL", False, 10.0, 0.9, 0.1, engage_request=True)
+check("ODD NORMAL + yeu cau bat lai -> L3_ACTIVE", r["state"] == "L3_ACTIVE")
 
 # ---------------------------------------------------------------------------
 # 9) Noise-aware sensor fusion (Module G)
