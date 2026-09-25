@@ -264,7 +264,7 @@ class EgoControllerEvidenceRemediationTests(unittest.TestCase):
                     {"throttle": True}):
             with self.subTest(bad=bad):
                 self.ego.reset_mock()
-                fields = dict(throttle=0.3, steer=0.0, brake=0.0, **bad)
+                fields = {**dict(throttle=0.3, steer=0.0, brake=0.0), **bad}
                 control = SimpleNamespace(**fields)
                 self.stack_cls.return_value.run_step.side_effect = None
                 self.stack_cls.return_value.run_step.return_value = (control, {"mode": "custom"})
