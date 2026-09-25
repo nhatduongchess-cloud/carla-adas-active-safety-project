@@ -1,6 +1,6 @@
 """Regression tests for the 2026-09-25 evidence review.
 
-That review arrived as a script: fifteen offline probes, each reproducing one
+That review arrived as a script: fourteen offline probes, each reproducing one
 suspected defect against the code as it stood. This file turns every probe that
 exposed a real defect into an assertion of the corrected behaviour, so none of
 them can come back quietly.
