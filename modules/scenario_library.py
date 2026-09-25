@@ -17,6 +17,11 @@ import math
 from dataclasses import dataclass
 from typing import Callable, List
 
+try:
+    from clearance import clearance as _surface_clearance, weakest_basis
+except ImportError:
+    from modules.clearance import clearance as _surface_clearance, weakest_basis
+
 
 # ============================================================================ #
 # Hạ tầng chạy kịch bản
@@ -37,7 +42,14 @@ class RunningScenario:
         # which the hazard becomes relevant to the ego swept corridor and is
         # therefore the correct origin for reaction-latency acceptance.
         self.hazard_frame = None
+        # Centre-to-centre distance: what triggers the scenario. Kept exactly as
+        # before, so no scenario starts earlier or later than it used to.
         self.min_actor_distance_m = math.inf
+        # Surface-to-surface clearance: what the acceptance criterion reads.
+        # See modules/clearance.py for why these are two different numbers.
+        self.min_clearance_m = math.inf
+        self.clearance_basis = None
+        self._bases_seen = []
 
     def _min_dist(self, ego):
         el = ego.get_location()
@@ -52,12 +64,32 @@ class RunningScenario:
                 pass
         return best
 
+    def _min_clearance(self, ego):
+        """Smallest surface-to-surface gap to any live actor, and its basis."""
+        best, basis = math.inf, None
+        for a in self.actors:
+            try:
+                if not a.is_alive:
+                    continue
+                gap, how = _surface_clearance(ego, a)
+                if gap < best:
+                    best, basis = gap, how
+            except Exception:
+                pass
+        return best, basis
+
     def tick(self, frame, ego, world):
         try:
             if self._on_tick:
                 self._on_tick(self, frame, ego, world)
             distance = self._min_dist(ego)
             self.min_actor_distance_m = min(self.min_actor_distance_m, distance)
+            gap, basis = self._min_clearance(ego)
+            if basis is not None:
+                self._bases_seen.append(basis)
+                self.clearance_basis = weakest_basis(self._bases_seen)
+                self._bases_seen = [self.clearance_basis]
+            self.min_clearance_m = min(self.min_clearance_m, gap)
             if not self.triggered and distance < self.trigger_distance:
                 self.triggered = True
                 self.trigger_frame = int(frame)

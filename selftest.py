@@ -464,7 +464,19 @@ check("dieu kien tut nhanh (critical) -> MRM ngay", r["state"] == "MRM_EXECUTING
 sm3 = L3StateMachine()
 sm3.update("VIOLATION", False, 10.0, 0.4, 0.1)             # -> TOR
 r = sm3.update("VIOLATION", True, 10.0, 0.4, 0.1)          # tai xe tiep quan
-check("tai xe tiep quan -> ve L3_ACTIVE", r["state"] == "L3_ACTIVE")
+# This check used to expect L3_ACTIVE, which asserted the defect: automation
+# re-engaging inside a violated ODD, then re-issuing a TOR on the next tick.
+# The intent - a takeover is honoured and the fallback exits - is unchanged.
+check("tai xe tiep quan -> DRIVER_CONTROL, khong phai L3_ACTIVE",
+      r["state"] == "DRIVER_CONTROL" and not r["override"] and not r["hazard"])
+r = sm3.update("VIOLATION", False, 10.0, 0.4, 0.1)
+check("ODD van VIOLATION -> khong phat lai TOR khi tai xe dang lai",
+      r["state"] == "DRIVER_CONTROL")
+for _ in range(200):                                        # 20 s, beyond the TOR window
+    r = sm3.update("VIOLATION", False, 10.0, 0.4, 0.1)
+check("tai xe dang lai -> khong bao gio vao MRM", r["state"] == "DRIVER_CONTROL")
+r = sm3.update("NORMAL", False, 10.0, 0.9, 0.1)
+check("ODD ve NORMAL -> L3 san sang lai", r["state"] == "L3_ACTIVE")
 
 # ---------------------------------------------------------------------------
 # 9) Noise-aware sensor fusion (Module G)
@@ -991,10 +1003,21 @@ check("mat lidar+radar >3 frame -> range redundancy lost", health.range_redundan
 odd_sensor = ODDMonitor().classify(estimate_conditions(), health.summary())
 check("range redundancy lost -> ODD VIOLATION critical",
       odd_sensor["state"] == "VIOLATION" and odd_sensor["critical"])
+# Radar-off must not by itself look like a range loss (the original intent of
+# this check). Its old fixture also dropped LiDAR, which asserted the unsafe
+# case - no range sensor left, reported healthy. Both are now checked apart.
 health_off = SensorHealthMonitor({"camera": True, "lidar": True, "radar": False}, 3)
 for frame in range(5):
-    health_off.next_frame(); health_off.observe("lidar", frame, float(frame), False)
+    health_off.next_frame(); health_off.observe("lidar", frame, float(frame), True)
 check("radar-off khong tao regression MRM moi", not health_off.range_redundancy_lost)
+health_blind = SensorHealthMonitor({"camera": True, "lidar": True, "radar": False}, 3)
+for frame in range(5):
+    health_blind.next_frame(); health_blind.observe("lidar", frame, float(frame), False)
+check("radar-off + mat lidar -> mat hoan toan cam bien khoang cach",
+      health_blind.range_redundancy_lost)
+check("radar tat -> availability la None, khong phai 100%",
+      health_blind.availability("radar") is None
+      and health_blind.summary()["availability"]["radar"] is None)
 check("sensor health ghi lai lich su dual-range loss",
       health.range_redundancy_loss_events == 1 and
       health.summary()["range_redundancy_ever_lost"] is True)

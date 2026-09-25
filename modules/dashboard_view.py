@@ -43,7 +43,9 @@ class DashboardView:
     def _l3_color(state):
         if state in ('MRM_EXECUTING', 'SAFE_STOP'):
             return C_RED
-        if state in ('TAKEOVER_REQUEST', 'DEGRADED'):
+        if state in ('TAKEOVER_REQUEST', 'DEGRADED', 'DRIVER_CONTROL'):
+            # DRIVER_CONTROL is not green: green on this panel means the
+            # automation is driving, and here it is not.
             return C_ORANGE
         return C_GREEN  # L3_ACTIVE
 

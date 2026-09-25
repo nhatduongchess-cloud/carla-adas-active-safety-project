@@ -6,6 +6,7 @@ Chuỗi trạng thái lái tự động mức 3:
         |   (VIOLATION)               (VIOLATION)
         v                             v
     TAKEOVER_REQUEST (bật hazard, đếm 10s chờ tài xế tiếp quản)
+        --(takeover)--> DRIVER_CONTROL --(ODD NORMAL)--> L3_ACTIVE
         | không tiếp quản trong 10s HOẶC điều kiện tụt rất nhanh (critical)
         v
     MRM_EXECUTING (giảm tốc êm theo μ, bật hazard) --(v≈0)--> SAFE_STOP
@@ -30,6 +31,9 @@ class L3StateMachine:
     TOR = "TAKEOVER_REQUEST"
     MRM = "MRM_EXECUTING"
     SAFE_STOP = "SAFE_STOP"
+    #: The driver accepted a takeover request and is driving. Automation is not
+    #: available again until the ODD returns to NORMAL.
+    DRIVER = "DRIVER_CONTROL"
 
     def __init__(self, tor_window_s=10.0, mrm_decel_frac=0.35):
         self.state = self.L3_ACTIVE
@@ -61,11 +65,24 @@ class L3StateMachine:
         elif s == self.TOR:
             self.tor_elapsed += dt
             if driver_takeover:
-                # Tài xế tiếp quản -> bàn giao, thoát fallback (mô phỏng).
-                self.state = self.L3_ACTIVE
+                # The driver has taken over: hand control to them. This used to
+                # return to L3_ACTIVE, which with the ODD still violated issued
+                # a fresh takeover request on the very next tick - the state
+                # oscillated every frame, reported automation active inside a
+                # violated ODD, and inflated the TOR count. With a one-shot
+                # takeover it was worse: the re-issued request timed out and
+                # started an MRM while the driver was already driving.
+                self.state = self.DRIVER
                 self.tor_elapsed = 0.0
             elif critical or self.tor_elapsed >= self.tor_window:
                 self.state = self.MRM
+
+        elif s == self.DRIVER:
+            # Re-engagement is modelled as available as soon as the ODD is
+            # NORMAL again. A real system would also wait for the driver to
+            # request it; the simulation has no driver to ask.
+            if odd_state == ODD_NORMAL:
+                self.state = self.L3_ACTIVE
 
         elif s == self.MRM:
             if ego_speed_ms <= 0.3:

@@ -377,7 +377,7 @@ Everything above produces *proposals*. Exactly one function turns proposals into
 ```mermaid
 flowchart TB
     F1["1 · Latched custom-control fault<br/>brake 1.0 + hazard, never hands back to Traffic Manager"]
-    F2["2 · L3 override: MRM / SAFE_STOP<br/>brake from target decel, hand brake on SAFE_STOP"]
+    F2["2 · L3 override: MRM / SAFE_STOP<br/>brake = max(MRM decel, AEB request), hand brake on SAFE_STOP"]
     F3["3 · AEB: decision.action == BRAKE<br/>brake = decision.brake"]
     F4["4 · Traffic Manager fallback"]
     F5["5 · Custom stack: RL cruise + planner<br/>capped again under DEGRADED ODD"]
@@ -388,7 +388,17 @@ flowchart TB
     F4 -->|"custom mode"| F5
 ```
 
-The first matching branch wins and returns. Two details are worth naming:
+The first matching branch wins and returns — with one exception, which is the
+third detail below. Three details are worth naming:
+
+**An MRM does not veto a harder AEB brake.** Until 2026-09-25, branch 2 set the
+pedal from the MRM's comfort deceleration and returned, so an AEB request for full
+braking made during an MRM was silently dropped: the evidence review reproduced
+AEB asking for 1.0 and the vehicle receiving 0.167. Ranking is the wrong model for
+two brake requests. The MRM still owns the vehicle — hazards, hand brake, and the
+decision that the planner is not in charge — but the pedal is the stronger of the
+two requests. The rule lives in `modules/control_arbitration.py`, which imports no
+CARLA so CI can test it.
 
 **Exceptions latch before they are explained.** Any exception raised inside the
 custom stack sets `mode = "custom_fault_safe_stop"` *first*, then formats the error
@@ -519,9 +529,11 @@ native crash can be localised to the phase that was running.
 ## 12. Known architectural gaps
 
 Recorded because an architecture document that only describes the intent is a
-brochure. Four of the eight have since been fixed — two found by writing this
-document, two by an external review that checked its claims against the code — and
-they are kept in [Resolved](#resolved) below rather than deleted.
+brochure. Twelve have been recorded. Five are fixed — two found by writing this
+document, two by an external review that checked its claims against the code, and
+one group of six fail-open paths (G12) by a second review that arrived as a script
+of offline probes — and they are kept in [Resolved](#resolved) below rather than
+deleted. G9–G11 came from that second review and are open.
 
 **G5 — The README state diagram is incomplete.** It shows four states; the
 implementation also emits `BRAKE_HOLD` and `BRAKE_TO_STOP`
@@ -549,9 +561,12 @@ than in this code.
 **G8 — `DynamicObjectCrossing` reacts late, and it was previously unmeasurable.**
 Measured on HEAD against a live server on 2026-09-19: the scenario commands its
 first brake at frame 49, **1.225 s** after `hazard_frame`, against a stated
-budget of 1.0 s. It brakes, never collides, and holds more than 3.1 m of
-clearance, so this is lateness rather than a safety failure — but it is the sole
-reason the catalog scores 43/45 instead of 45/45 and the weather matrix 28/30.
+budget of 1.0 s. It brakes and never collides. This paragraph used to add that it
+"holds more than 3.1 m of clearance, so this is lateness rather than a safety
+failure". That figure matched nothing in the data, and every clearance recorded at
+the time was centre-to-centre (see G12, resolved); how close it actually comes is
+not yet measured. It is the sole reason the catalog scores 43/45 instead of 45/45
+and the weather matrix 28/30.
 
 Three things were established before writing this down. It is **not weather
 specific**: across seeds it straddles the threshold in clear weather too (0.30 s,
@@ -569,10 +584,83 @@ hypothesis; it has not been traced. Evidence:
 [`docs/benchmarks/head_doc_probe.json`](benchmarks/head_doc_probe.json),
 [`pre_f02_doc_heavyrain.json`](benchmarks/pre_f02_doc_heavyrain.json).
 
+**G9 — A critical brake can release onto an object that is still there. Open.**
+Found by the 2026-09-25 evidence review, reproduced offline. After a critical
+brake latches, five consecutive frames with an empty LiDAR corridor release it
+(`lost_frames_tol = 4`, `active_safety.py`), and while it holds, the brake level
+drops from 1.0 to 0.7. The hold exists so that a sparse cone flickering in and out
+of the point cloud does not release the brake — but an empty corridor looks exactly
+the same when an object has moved into the LiDAR's near-field blind zone, which is
+what a low object does as the car closes on it.
+
+Not fixed, deliberately. Every candidate repair — keep the latch until the vehicle
+stops, or until it has travelled past the last-seen obstacle position, and keep the
+latched brake level while holding — changes live AEB behaviour in every braking
+scenario, and has to be re-run on the simulator before it is trusted. A safety
+change that has only been reasoned about is not a safety change.
+
+**G10 — The MRM brakes in a straight line. Open, found by reading.**
+`ego_control.py` builds the MRM command as `VehicleControl(brake=…, hand_brake=…)`,
+which leaves steering at 0. An MRM started on a curve at 50 km/h with μ 0.4 brakes at
+about 1.4 m/s² — roughly 70 m to rest — with the wheels straight. Not reproduced in
+the simulator; the fix is to keep the lateral controller tracking the lane during an
+MRM, which touches the same live paths as G9.
+
+**G11 — The ODD monitor's friction violation cannot be reached in this simulation.
+Open, and not a bug in either module.** `weather_model.estimate_conditions` maps
+CARLA weather to μ between 0.9 (dry) and 0.4 (soaked), which is right for asphalt;
+CARLA has no ice or standing water. The monitor's μ < 0.3 VIOLATION and μ < 0.2
+critical thresholds are right for a real vehicle and unreachable here. Every
+weather-driven VIOLATION in the published results came from visibility or signal
+quality, never from friction. Lowering the friction floor to reach the threshold
+would be tuning the data to hit a gate, so the gap is recorded instead.
+
 ### Resolved
 
 Kept here rather than deleted, because how a defect was found and what it turned
 out to cost is part of the architecture's history.
+
+**G12 — Six fail-open paths found by an evidence review. Fixed 2026-09-25.**
+An external review arrived as a script of offline probes, each reproducing one
+suspected defect. Every probe was run before anything changed; the ones that
+exposed real defects are now regression tests in `tests/test_evidence_review.py`.
+
+- *The ODD monitor reported NORMAL when it could measure nothing.* Every comparison
+  against NaN is False, so an all-NaN estimate fell through to NORMAL. Unmeasurable
+  inputs are now a VIOLATION with a named reason — a takeover request, not an MRM.
+- *A takeover during a violation re-engaged the automation.* The state machine
+  returned to `L3_ACTIVE`, re-issued a takeover request on the next tick, and
+  oscillated every frame; after a one-shot takeover the re-issued request timed out
+  and began an MRM 10.03 s later with the driver already driving. Takeover now goes
+  to `DRIVER_CONTROL`, which holds until the ODD is NORMAL. A self-test check that
+  asserted the old behaviour was corrected to assert the new one; its intent — a
+  takeover is honoured — is unchanged.
+- *An MRM vetoed the AEB.* See [§8](#8-command-arbitration).
+- *Total loss of range sensing went undetected with radar disabled.* The rule
+  returned "not lost" whenever radar was off, so losing LiDAR — the only range
+  sensor left — was reported as healthy. Loss now means every enabled range sensor
+  is gone. A disabled sensor now reports availability `null` rather than 100%, which
+  had let a disabled radar pass a "radar availability ≥ 99.5%" runtime criterion.
+  A self-test check whose fixture encoded the unsafe case was split into two: one
+  for its original intent, one for the case it had hidden.
+- *Acceptance passed on measurements that were missing or broken.* NaN reaction
+  delay, NaN clearance, negative delay, and a missing collision count all produced a
+  pass. Forty-five copies of one scenario satisfied the 45-case and 18-core gates.
+  An empty suite asserted "no collisions". A zero-frame KPI summary reported
+  success. Each now fails or reports not-evaluated, and the gate counts distinct
+  cases and requires every declared core scenario to be present.
+- *Clearance was measured between centres.* Two cars touch at about 4.8 m, so the
+  0.25 m criterion could not fail for a vehicle target — the second inert criterion
+  this harness has had, after the reaction delay. Acceptance now uses
+  surface-to-surface distance between oriented bounding boxes
+  (`modules/clearance.py`); centre distance still drives scenario triggering, so no
+  scenario starts earlier or later than before.
+
+One criterion became stricter rather than merely correct: late braking (brake onset
+with TTC < 0.8 s) was computed and reported by the L3 evaluation but never gated,
+and now fails a profile. The report's default title, which read "Mercedes-Benz DRIVE
+PILOT L3 Validation Report", is now project-neutral: this is a student simulation,
+not a validation report for a manufacturer's product.
 
 **G1 — `planner.py` carried an unreachable safety branch. Fixed.**
 `DrivingState.EMERGENCY_STOP` was selected from `collision_risk`, but the only
@@ -634,14 +722,14 @@ quietly become vacuous if the constants change.
 
 ```mermaid
 flowchart BT
-    A["selftest.py — 204 checks, 17 areas<br/>no CARLA, no torch, no weights"]
+    A["selftest.py — 209 checks, 17 areas<br/>no CARLA, no torch, no weights"]
     B["test_*.py unit suite<br/>runs locally, imports CARLA client and torch"]
     C["run_scenarios.py — 15-scenario catalog, 6-scenario core suite<br/>seeded × weather × fault matrix"]
     D["evaluate_l3.py — weather-profile L3 evaluation"]
     A --> B --> C --> D
 ```
 
-**Tier 1 — simulator-free self-test.** `selftest.py` runs **204 checks across 17
+**Tier 1 — simulator-free self-test.** `selftest.py` runs **209 checks across 17
 areas** and imports neither CARLA, nor torch, nor ultralytics — no simulator, no
 GPU, no model weights. It does need a handful of ordinary libraries, and this
 document previously said otherwise: `selftest.py` imports
@@ -655,8 +743,8 @@ experiment and controller, sensor frame integrity, planning and control, traffic
 semantics, and the radar/health/async/lane contracts. This tier exists so that the
 safety logic is verifiable in CI, where no simulator can run.
 
-**Tier 2 — unit suite.** Of the 22 `test_*.py` modules at repository root, **16 run
-with no CARLA client, no torch and no weights — 189 tests** — and they now run on
+**Tier 2 — unit suite.** Of the 23 `test_*.py` modules under `tests/`, **17 run
+with no CARLA client, no torch and no weights — 237 tests** — and they now run on
 every push as the `offline-tests` CI job. The remaining six import the CARLA client
 and stay local. Splitting them was the point: "needs a simulator" had been assumed
 of the whole suite, and it was only ever true of a quarter of it.
@@ -675,7 +763,7 @@ origin would flatter the result.
 
 **CI** (`.github/workflows/selftest.yml`) runs three jobs on every push and pull
 request to `main`: Ruff correctness lint, Mypy over the safety-evidence core, and
-the 204-check self-test, and the 189 offline unit tests.
+the 209-check self-test, and the 237 offline unit tests.
 
 ---
 

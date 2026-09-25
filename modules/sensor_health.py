@@ -9,6 +9,10 @@ except ImportError:
     from modules.perception_contracts import SensorState
 
 
+
+#: Sensors that measure metric range. Losing every enabled one is losing range.
+RANGE_SENSORS = ("lidar", "radar")
+
 class SensorHealthMonitor:
     def __init__(self, enabled=None, max_range_misses=3):
         enabled = enabled or {"camera": True, "lidar": True, "radar": True}
@@ -56,18 +60,41 @@ class SensorHealthMonitor:
         self.frames += 1
 
     @property
-    def range_redundancy_lost(self) -> bool:
-        lidar = self.states.get("lidar")
-        radar = self.states.get("radar")
-        if not lidar or not radar or not radar.enabled:
-            return False
-        return (lidar.consecutive_misses > self.max_range_misses
-                and radar.consecutive_misses > self.max_range_misses)
+    def range_sensors_enabled(self) -> list:
+        return [name for name in RANGE_SENSORS
+                if name in self.states and self.states[name].enabled]
 
-    def availability(self, sensor: str) -> float:
+    @property
+    def range_redundancy_lost(self) -> bool:
+        """True when no enabled range sensor is delivering.
+
+        The name is historical and kept because the ODD monitor and dashboard
+        consume it. With LiDAR and radar both enabled it means exactly what it
+        always meant: both lost. With radar disabled, LiDAR alone carries range,
+        so losing it is losing range sensing entirely - and the previous rule,
+        which returned False whenever radar was disabled, reported that as
+        healthy. The 2026-09-25 evidence review reproduced it: five consecutive
+        LiDAR misses, radar off, `range_redundancy_lost: false`, ODD NORMAL.
+
+        A monitor with no range sensor enabled at all has no range sensing by
+        construction, and says so.
+        """
+        enabled = self.range_sensors_enabled
+        if not enabled:
+            return True
+        return all(self.states[name].consecutive_misses > self.max_range_misses
+                   for name in enabled)
+
+    def availability(self, sensor: str):
+        """Share of frames the sensor delivered, or None when it is disabled.
+
+        A disabled sensor used to report 1.0 - 100% available - which let a
+        disabled radar pass a "radar availability >= 99.5%" criterion. It has
+        no availability; it is not there.
+        """
         state = self.states.get(sensor)
         if state is None or not state.enabled:
-            return 1.0
+            return None
         return self.available_counts.get(sensor, 0) / max(1, self.frames)
 
     def snapshot(self) -> Dict[str, SensorState]:
@@ -76,8 +103,11 @@ class SensorHealthMonitor:
     def summary(self) -> dict:
         return {
             "frames": self.frames,
-            "availability": {name: round(self.availability(name), 6)
+            "enabled": {name: state.enabled for name, state in self.states.items()},
+            "availability": {name: (None if self.availability(name) is None
+                                    else round(self.availability(name), 6))
                              for name in self.states},
+            "range_sensors_enabled": self.range_sensors_enabled,
             "consecutive_misses": {name: state.consecutive_misses
                                    for name, state in self.states.items()},
             "missing_counts": dict(self.missing_counts),

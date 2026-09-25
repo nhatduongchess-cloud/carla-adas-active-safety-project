@@ -233,7 +233,7 @@ def run_scenario(client, world, bp_lib, name, profile, shared, args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Mercedes L3 validation harness")
+    parser = argparse.ArgumentParser(description="L3 ODD / MRM validation harness (CARLA simulation)")
     parser.add_argument('--profiles', type=str, default='all',
                         help="danh sách hồ sơ ngăn cách dấu phẩy, hoặc 'all'")
     parser.add_argument('--seconds', type=float, default=15.0, help="thời lượng mỗi kịch bản")

@@ -68,6 +68,27 @@ class RuntimeReportTests(unittest.TestCase):
         data.frame_count = 0
         self.assertFalse(self.render(data)[0])
 
+    def test_disabled_radar_is_not_applicable_rather_than_available(self):
+        """A disabled radar used to report 100% availability and pass the
+        radar criterion. It now reports None and is listed as not applicable."""
+        data, _ = self.fixture()
+        data.health_monitor = NS(summary=lambda: {
+            'enabled': {'camera': True, 'lidar': True, 'radar': False},
+            'availability': {'camera': 1., 'lidar': 1., 'radar': None}})
+        passed, report = self.render(data)
+        self.assertTrue(passed)
+        self.assertIsNone(report['criteria']['radar_availability_ge_99_5pct'])
+        self.assertEqual(report['criteria_not_applicable'], ['radar_availability_ge_99_5pct'])
+
+    def test_enabled_radar_with_no_availability_fails_rather_than_being_skipped(self):
+        """Only a criterion that is explicitly not applicable may be skipped."""
+        data, _ = self.fixture()
+        data.health_monitor = NS(summary=lambda: {
+            'enabled': {'radar': True}, 'availability': {'radar': None}})
+        passed, report = self.render(data)
+        self.assertFalse(passed)
+        self.assertEqual(report['criteria_not_applicable'], [])
+
     def test_reporting_after_server_loss_uses_cached_map(self):
         data, _ = self.fixture()
         data.world = None

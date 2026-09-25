@@ -352,9 +352,15 @@ def run_one(client, world, bp_lib, spec, shared, args):
             "logs", f"kpi_scn_{spec.name}_{args.weather}_seed{args.seed}_{args.fault}.csv"))
 
         collisions = summary["collisions"]
-        actor_clearance = scenario.min_actor_distance_m
+        # Surface-to-surface clearance, not centre distance: the old value was
+        # centre-to-centre, which could not fall below the 0.25 m criterion for
+        # a vehicle target. Centre distance is still reported, under its name.
+        actor_clearance = scenario.min_clearance_m
         if not np.isfinite(actor_clearance):
             actor_clearance = None
+        centre_distance = scenario.min_actor_distance_m
+        if not np.isfinite(centre_distance):
+            centre_distance = None
         reaction_delay_s = None
         if scenario.hazard_frame is not None and first_reaction_frame is not None:
             reaction_delay_s = max(0.0, (first_reaction_frame - scenario.hazard_frame) * dt)
@@ -395,6 +401,9 @@ def run_one(client, world, bp_lib, spec, shared, args):
             "min_distance_m": summary["min_distance_m"],
             "scenario_min_clearance_m": (round(actor_clearance, 2)
                                           if actor_clearance is not None else None),
+            "clearance_basis": scenario.clearance_basis,
+            "scenario_min_center_distance_m": (round(centre_distance, 2)
+                                               if centre_distance is not None else None),
             "min_ttc_s": summary["min_ttc_s"],
             "max_decel_ms2": summary["max_decel_ms2"], "kpi": summary,
             "triggered": scenario.triggered,

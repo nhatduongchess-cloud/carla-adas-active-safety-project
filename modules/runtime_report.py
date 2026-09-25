@@ -65,7 +65,8 @@ def write_runtime_report(path: str, cfg: Any,
     safety_p99 = stages.get("safety_control", {}).get("p99_ms")
     perception_p95 = stages.get("neural_inference", {}).get("p95_ms")
     health_summary = data.health_monitor.summary()
-    radar_availability = health_summary.get("availability", {}).get("radar", 0.0)
+    radar_enabled = health_summary.get("enabled", {}).get("radar", True)
+    radar_availability = health_summary.get("availability", {}).get("radar")
     collisions = (data.collision_sensor.count
                   if data.collision_sensor is not None else 0)
     frame_errors = (data.sensor_sync_stats.frame_errors
@@ -85,7 +86,11 @@ def write_runtime_report(path: str, cfg: Any,
         "collisions_zero": data.collision_sensor is not None and collisions == 0,
         "sensor_frame_errors_zero": (
             data.sensor_sync_stats is not None and frame_errors == 0),
-        "radar_availability_ge_99_5pct": float(radar_availability) >= 0.995,
+        # None when radar is disabled: a sensor that is not fitted cannot pass
+        # an availability criterion, and it previously did, at 100%.
+        "radar_availability_ge_99_5pct": (
+            None if not radar_enabled
+            else radar_availability is not None and float(radar_availability) >= 0.995),
         "real_time_loop_ge_38hz": float(data.fps_ema) >= cfg.FPS * 0.95,
         "safety_p99_le_25ms": _within_limit(safety_p99, cfg.SAFETY_DEADLINE_MS),
         "perception_p95_le_50ms": _within_limit(
@@ -102,7 +107,12 @@ def write_runtime_report(path: str, cfg: Any,
         "torch_gpu_peak_le_limit": _within_limit(pipeline_summary.get("gpu_peak_mb"), cfg.VRAM_LIMIT_MB),
         "device_gpu_peak_le_limit": _within_limit(pipeline_summary.get("gpu_device_peak_used_mb"), cfg.VRAM_LIMIT_MB),
     }
-    run_pass = all(criteria.values())
+    # Only a criterion that is explicitly not applicable may be skipped. Every
+    # other None stays a failure - a missing measurement is not a pass.
+    not_applicable = sorted(
+        name for name in ("radar_availability_ge_99_5pct",)
+        if criteria.get(name) is None and not radar_enabled)
+    run_pass = all(value for name, value in criteria.items() if name not in not_applicable)
     report = {
         "title": "CARLA finite runtime / soak report",
         "status": "PASS" if run_pass else "FAIL",
@@ -161,6 +171,7 @@ def write_runtime_report(path: str, cfg: Any,
             "source_frames": data.lane_source_counts,
         },
         "criteria": criteria,
+        "criteria_not_applicable": not_applicable,
         "telemetry_csv": (
             data.telemetry.filename if data.telemetry is not None else None),
     }

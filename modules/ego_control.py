@@ -10,9 +10,11 @@ chế độ opt-in; custom-control fault phải safe-stop, không được tự 
 import carla
 
 try:
+    from control_arbitration import longitudinal_override
     from ego_driving_stack import EgoDrivingStack
     from road_geometry import EgoRoute
 except ImportError:
+    from modules.control_arbitration import longitudinal_override
     from modules.ego_driving_stack import EgoDrivingStack
     from modules.road_geometry import EgoRoute
 
@@ -177,12 +179,16 @@ class EgoController:
                 hand_brake=bool(l3.get('override') and l3.get('state') == 'SAFE_STOP'))
 
         if l3['override']:
+            # The MRM owns the vehicle, but it does not get to veto a harder
+            # AEB brake: see modules/control_arbitration.py.
             self._ensure_manual()
-            bcmd = 1.0 if l3['state'] == 'SAFE_STOP' else min(1.0, l3['target_decel_ms2'] / 6.0)
+            command = longitudinal_override(l3, decision)
             ego.apply_control(carla.VehicleControl(
-                brake=bcmd, hand_brake=(l3['state'] == 'SAFE_STOP')))
+                brake=command["brake"], hand_brake=command["hand_brake"]))
             set_hazard_lights(ego, True)
-            return {"mode": "l3_override", "behavior_state": l3['state']}
+            status = {"mode": "l3_override", "behavior_state": l3['state'],
+                      "brake_source": command["source"]}
+            return status
 
         elif decision.action == "BRAKE":
             set_hazard_lights(ego, l3['hazard'])

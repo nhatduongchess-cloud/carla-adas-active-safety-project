@@ -7,7 +7,7 @@
   - max_decel_ms2     : phanh mạnh nhất (an toàn vs. thoải mái)
   - max_jerk_ms3      : giật lớn nhất (chỉ số ÊM ÁI / comfort)
   - pct_time_state    : % thời gian ở mỗi trạng thái FSM
-  - success           : không va chạm
+  - success           : có dữ liệu (frames > 0) và không va chạm
 
 Thuần stdlib -> test được không cần CARLA.
 """
@@ -121,7 +121,8 @@ class KpiRecorder:
             "mean_speed_kmh": round(3.6 * sum(self.speed) / max(1, n), 1),
             "max_speed_kmh": round(3.6 * max(self.speed), 1) if self.speed else 0.0,
             "pct_time_state": pct,
-            "success": self.collisions == 0,
+            # A run with no frames did not succeed; it did not happen.
+            "success": n > 0 and self.collisions == 0,
         }
 
     def write_csv(self, path):

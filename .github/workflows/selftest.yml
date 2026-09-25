@@ -3,7 +3,7 @@
 # Four CARLA-free gates on every push / PR:
 #   lint      - ruff correctness gate (pyflakes F + syntax E9 + bugbear B)
 #   typecheck - mypy on the safety-evidence core
-#   selftest  - selftest.py geometry + safety-FSM checks (204)
+#   selftest  - selftest.py geometry + safety-FSM checks (209)
 #   offline-tests - the test_*.py modules that need no CARLA client
 # Six modules in tests/ import the CARLA client and cannot run here
 # (test_capture_lifecycle, test_dataset_capture, test_ego_control,
@@ -40,7 +40,7 @@ jobs:
       - run: mypy
 
   selftest:
-    name: Self-test (204 CARLA-free checks)
+    name: Self-test (209 CARLA-free checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -53,7 +53,7 @@ jobs:
         run: python selftest.py
 
   offline-tests:
-    name: Unit tests that run without CARLA (189 tests)
+    name: Unit tests that run without CARLA (237 tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -74,6 +74,7 @@ jobs:
           tests.test_carla_probe
           tests.test_dataset_labels
           tests.test_decision_trace
+          tests.test_evidence_review
           tests.test_image_quality
           tests.test_inference_telemetry
           tests.test_launch_carla
