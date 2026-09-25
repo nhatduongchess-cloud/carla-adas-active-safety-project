@@ -23,6 +23,7 @@ from modules.l3_report import (assess_profile, build_report, case_id, exit_code_
                                write_report)
 from modules.mrm_controller import L3StateMachine
 from modules.odd_monitor import ODDMonitor
+from modules.provenance import carla_versions, git_state
 from modules.scenario_acceptance import assess_scenario, finalize_after_cleanup, reaction_timing
 from modules.sensor_health import SensorHealthMonitor
 from scripts.tools import generate_validation_report as gvr
@@ -619,6 +620,25 @@ class L3HarnessReportTests(unittest.TestCase):
         row = self.profile("custom", expect=None, actual="NORMAL")
         self.assertEqual(row["status"], "INVALID")
         self.assertFalse(row["pass"])
+
+
+
+class ProvenanceTests(unittest.TestCase):
+    def test_git_state_outside_a_repository_says_why(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            state = git_state(folder)
+        self.assertIsNone(state["git_commit"])
+        self.assertIsNone(state["git_dirty"])
+        self.assertTrue(state["unknown_reason"])
+
+    def test_carla_versions_failure_is_recorded_not_guessed(self):
+        class Dead:
+            def get_client_version(self):
+                raise RuntimeError("time-out of 60000ms")
+        versions = carla_versions(Dead())
+        self.assertIsNone(versions["server"])
+        self.assertIn("time-out", versions["unknown_reason"])
 
 
 if __name__ == "__main__":

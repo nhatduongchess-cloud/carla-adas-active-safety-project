@@ -54,6 +54,7 @@ from scene_semantics import summarize_traffic_controls
 from simulation_guard import (force_traffic_lights_green, restore_traffic_lights,
                               get_or_load_world)
 from runtime_config import configure_inference_device
+from provenance import carla_versions, git_state, runtime_manifest
 import scenario_library as lib
 
 REPORT_PATH = "logs/scenario_test_report.json"
@@ -639,7 +640,24 @@ def main():
     planned_case_ids = [case_id({"name": spec.name, "seed": run_seed,
                                  "weather": run_weather, "fault": args.fault})
                         for run_seed in seeds for run_weather in weathers for spec in specs]
+    # Provenance, captured once before the matrix. Unknown fields stay None
+    # with a reason; nothing is filled in from the current machine later.
+    provenance = runtime_manifest(
+        model_paths=[cfg.YOLO_MODEL_A] + ([cfg.YOLO_MODEL_B] if cfg.USE_ENSEMBLE else []),
+        carla_version=carla_versions(client))
+    provenance.update(git_state(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        applied = world.get_settings()      # read back, not what was requested
+        provenance["world_settings_read_back"] = {
+            "synchronous_mode": bool(applied.synchronous_mode),
+            "fixed_delta_seconds": applied.fixed_delta_seconds,
+            "substepping": bool(getattr(applied, "substepping", False)),
+            "max_substep_delta_time": getattr(applied, "max_substep_delta_time", None),
+            "max_substeps": getattr(applied, "max_substeps", None)}
+    except Exception as exc:
+        provenance["world_settings_read_back"] = {"unknown_reason": f"{type(exc).__name__}: {exc}"}
     meta = {
+        "provenance": provenance,
         "seeds": seeds,
         "weathers": weathers,
         "fault": args.fault,

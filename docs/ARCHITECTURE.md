@@ -104,9 +104,9 @@ holds references it is responsible for destroying. That ownership boundary is wh
 |---|---|---|
 | Tick rate | `FPS = 40` | `config.py:16` |
 | Fixed timestep | `FIXED_DELTA = 1/40 = 0.025 s` | `config.py:17` |
-| Safety deadline | `SAFETY_DEADLINE_MS = 25.0` | `config.py:204` |
-| Perception deadline | `PERCEPTION_DEADLINE_MS = 50.0` | `config.py:206` |
-| Max async result age | `MAX_ASYNC_RESULT_AGE_MS = 150.0` | `config.py:207` |
+| Safety deadline | `SAFETY_DEADLINE_MS = 25.0` | `config.py:213` |
+| Perception deadline | `PERCEPTION_DEADLINE_MS = 50.0` | `config.py:214` |
+| Max async result age | `MAX_ASYNC_RESULT_AGE_MS = 150.0` | `config.py:211` |
 
 The loop is single-threaded and synchronous by default. `SensorRig.read()` issues
 `world.tick()` and then retrieves the camera and LiDAR frames **for that exact
@@ -272,17 +272,17 @@ measurement onto the ego vehicle's own planned path
 
 | Source | Function | Admission test |
 |---|---|---|
-| LiDAR clusters | `_scan_corridors()` (`active_safety.py:119`) | `x > 0` and `\|lateral\| < lane_half`; cluster must hold `MIN_CLUSTER_POINTS = 5` points, relaxed to 2 if flagged safety-critical |
-| Tracked objects | `_predictive()` (`active_safety.py:165`) | corridor widened by a VRU margin for person / bicycle / motorcycle; tracks are stepped forward 0.25 s at a time to catch cut-ins |
-| Radar targets | `_radar_threat()` (`active_safety.py:203`) | `along > 0` and `\|lateral\| < lane_half` |
+| LiDAR clusters | `_scan_corridors()` (`active_safety.py:147`) | `x > 0` and `\|lateral\| < lane_half`; cluster must hold `MIN_CLUSTER_POINTS = 5` points, relaxed to 2 if flagged safety-critical |
+| Tracked objects | `_predictive()` (`active_safety.py:193`) | corridor widened by a VRU margin for person / bicycle / motorcycle; tracks are stepped forward 0.25 s at a time to catch cut-ins |
+| Radar targets | `_radar_threat()` (`active_safety.py:231`) | `along > 0` and `\|lateral\| < lane_half` |
 
 Note what gates the LiDAR source: **point count**, not classifier score. That is
 driver D1 in one line of code. The camera contributes a *label for display only*
-(`_label_for()`, `active_safety.py:250`); it cannot create or suppress a brake.
+(`_label_for()`, `active_safety.py:279`); it cannot create or suppress a brake.
 
 The three estimates are combined by taking the most conservative of each quantity —
 `nearest = min(...)`, `ttc = min(...)`, `closing = max(...)`
-(`active_safety.py:300-316`). They are never averaged. Averaging a true 8 m reading
+(`active_safety.py:336-351`). They are never averaged. Averaging a true 8 m reading
 with a spurious 40 m reading yields 24 m, which is neither sensor's opinion and is
 wrong in the dangerous direction.
 
@@ -297,16 +297,16 @@ warning    = nearest < dyn_safe         or  ttc < WARNING_TTC_S
 
 | Constant | Value | Source |
 |---|---|---|
-| `CRITICAL_TTC_S` | 1.6 s | `config.py:134` |
-| `WARNING_TTC_S` | 3.0 s | `config.py:135` |
+| `CRITICAL_TTC_S` | 1.6 s | `config.py:141` |
+| `WARNING_TTC_S` | 3.0 s | `config.py:142` |
 | `MIN_SAFE_DIST_M` | 6.0 m | `config.py:131` |
 | `REACTION_TIME_S` | 1.0 s | `config.py:130` |
 | `LANE_HALF_WIDTH_M` | 1.75 m | `config.py:124` |
-| `MIN_CLOSING_SPEED` | 0.3 m/s | `config.py:136` |
-| `DRY_FRICTION_MU` | 0.85 | `config.py:261` |
+| `MIN_CLOSING_SPEED` | 0.3 m/s | `config.py:143` |
+| `DRY_FRICTION_MU` | 0.85 | `config.py:268` |
 
 `gap_multiplier` is supplied by the ODD monitor: 1.0 normal, 1.5 degraded, 2.0 on
-violation (`odd_monitor.py:37-49`), so degrading the environment widens the safety
+violation (`odd_monitor.py:73-91`), so degrading the environment widens the safety
 envelope without needing a separate rule.
 
 That sentence was aspirational when this document was first written, and an external
@@ -338,33 +338,42 @@ stateDiagram-v2
     BRAKE_HOLD --> NORMAL: is_clear
     BRAKE_TO_STOP --> NORMAL: is_clear
     NORMAL --> BRAKE_HOLD: track lost, latched
+    NORMAL --> BRAKE_HOLD_NO_DATA: LiDAR invalid, latched
+    BRAKE_HOLD_NO_DATA --> BRAKE_HOLD: valid frame, corridor empty
 ```
 
 An evade aborts into a latched `EMERGENCY_BRAKE` when `getting_dangerous`
 (`ttc < critical_ttc × 1.3` or `nearest < min_safe_dist × 1.3`) or when the target
-side stops being clear (`active_safety.py:408-421`). "ttc ok" on the diagram is
-`ttc >= evade_min_ttc = 2.0` (`:91`) — below that there is no longer time to
+side stops being clear (`active_safety.py:467-480`). "ttc ok" on the diagram is
+`ttc >= evade_min_ttc = 2.0` (`:110`) — below that there is no longer time to
 change lanes, so the system brakes instead.
 
 Three mechanisms keep this from oscillating, all in `active_safety.py`:
 
 - **Commitment.** An evade, once begun, runs for `evade_commit_s = 1.5 s`
-  (`:89`) — 60 frames at `dt = 0.025` (`:436`). A threshold-only arbiter re-decides
+  (`:71`) — 60 frames at `dt = 0.025` (`:495`). A threshold-only arbiter re-decides
   every 25 ms and can abandon a half-completed lane change in the middle of the
   adjacent lane, which is worse than either committing or braking.
 - **Hysteresis.** The brake releases only when
   `nearest > dyn_safe × 1.4` **and** `ttc > warning_ttc × 1.4`
-  (`brake_exit_factor = 1.4`, `:90`, test at `:377-378`). Release and engage use
+  (`brake_exit_factor = 1.4`, `:72`, test at `:434-435`). Release and engage use
   different thresholds, so a measurement sitting on the line cannot chatter.
-- **Latch tolerance.** If tracking is lost entirely while the brake is latched, the
-  brake is *held* for `lost_frames_tol = 4` frames (`:108`, `:326-332`) before the
-  state is cleared. Losing sight of an obstacle is not evidence that it is gone.
+- **Evidence-based release (2026-09-25).** If the corridor is empty while the brake
+  is latched, the brake is *held* at its latched level until a clear corridor has
+  been observed on **valid** LiDAR frames for `clear_confirm_s = 0.1 s` — the same
+  cadence as the old `lost_frames_tol = 4` at 40 Hz, but timed in seconds so it
+  means the same thing at any loop rate. A frame without valid LiDAR data
+  (`lidar_valid=False`, e.g. an injected LiDAR loss) is not evidence of anything:
+  the state is `BRAKE_HOLD_NO_DATA`, the brake is held at its latched level
+  indefinitely, and the confirmation restarts. Previously the brake dropped from
+  1.0 to 0.7 on the first empty frame and released after five, whether or not the
+  data was valid (G9).
 
 Decision order inside `update()` is fixed and first-match-wins: latched brake →
 critical → committed evade phase → must-act → warning → normal
-(`active_safety.py:264-456`). Emergency braking is evaluated before evasion, and an
+(`active_safety.py:292-515`). Emergency braking is evaluated before evasion, and an
 in-progress evade is aborted into a latched brake if conditions deteriorate
-(`:408-421`).
+(`:467-480`).
 
 ---
 
@@ -372,13 +381,13 @@ in-progress evade is aborted into a latched brake if conditions deteriorate
 
 Everything above produces *proposals*. Exactly one function turns proposals into a
 `VehicleControl`, and its order is fixed
-(`modules/ego_control.py:4`, implemented at `:170-237`):
+(`modules/ego_control.py:4`, implemented at `:193-287`):
 
 ```mermaid
 flowchart TB
     F1["1 · Latched custom-control fault<br/>brake 1.0 + hazard, never hands back to Traffic Manager"]
     F2["2 · L3 override: MRM / SAFE_STOP<br/>brake = max(MRM decel, AEB request), hand brake on SAFE_STOP"]
-    F3["3 · AEB: decision.action == BRAKE<br/>brake = decision.brake"]
+    F3["3 · AEB: decision.action == BRAKE<br/>brake = validated decision.brake, throttle 0"]
     F4["4 · Traffic Manager fallback"]
     F5["5 · Custom stack: RL cruise + planner<br/>capped again under DEGRADED ODD"]
 
@@ -400,9 +409,18 @@ decision that the planner is not in charge — but the pedal is the stronger of 
 two requests. The rule lives in `modules/control_arbitration.py`, which imports no
 CARLA so CI can test it.
 
+**Every command is validated before the RPC.** A command from the custom stack
+with a NaN, an out-of-range value or a bool in throttle, steer or brake raises a
+control fault (branch 1 from then on) instead of being clamped and sent; brake
+requests on branches 2 and 3 are validated with invalid values mapped to full
+braking. Throttle is zero whenever the brake is applied. Steering on branches 2
+and 3 is held at 0 — a degraded lateral fallback, not lane keeping (G10). One
+command is sent per cycle; `apply_control` is fire-and-forget, so status records
+`command_sent`, never "applied".
+
 **Exceptions latch before they are explained.** Any exception raised inside the
 custom stack sets `mode = "custom_fault_safe_stop"` *first*, then formats the error
-(`ego_control.py:222-237`). The in-code comment is the design rule: latch first,
+(`ego_control.py:272-287`). The in-code comment is the design rule: latch first,
 brake second, diagnose last. Once latched, the vehicle is never handed back to the
 Traffic Manager, because a failure in the custom stack is not evidence that autopilot
 is a safe destination.
@@ -416,7 +434,7 @@ is a safe destination.
    network: `min(√(2·a_comfort·usable), nearest / time_gap)`, squeezed further when
    TTC < 6 s (`rl_speed_controller.py:49-67`, applied at `:81`).
 3. It is capped again to 40 km/h when the ODD is DEGRADED
-   (`ego_control.py:202-203`), and it sits at rank 5 in the arbitration above, so
+   (`ego_control.py:244-245`), and it sits at rank 5 in the arbitration above, so
    AEB and MRM overwrite it outright.
 
 If the policy checkpoint fails to load for any reason, the controller falls back to
@@ -437,10 +455,14 @@ friction, signal-to-noise and sensor redundancy:
 | `DEGRADED` | visibility ≤ 50 m or μ < 0.6 | 40 km/h | 1.5 |
 | `VIOLATION` | redundancy lost, or visibility < 20 m, or μ < 0.3, or SNR < 0.25 | 0 km/h | 2.0 |
 
-`range_redundancy_lost` requires **both** LiDAR and radar to exceed their miss
-threshold (`sensor_health.py:59-65`) — losing one range sensor is a degradation,
-losing both is a violation, and the distinction is what keeps the system from
-declaring an emergency over a single dropped frame.
+`range_redundancy_lost` (also exported as `all_enabled_range_unavailable`) is true
+when **every enabled** range sensor exceeds its miss threshold — both LiDAR and
+radar when both are fitted, LiDAR alone when radar is disabled.
+`range_redundancy_degraded` marks one of several lost; it is informational and
+does not change the ODD. Losing one range sensor is a degradation, losing all of
+them is a critical violation. Inputs that are missing, not finite, a bool or a
+string are an ODD `VIOLATION` with reason `odd_unmeasurable:<field>` (a TOR, not
+an immediate MRM).
 
 ```mermaid
 stateDiagram-v2
@@ -450,21 +472,38 @@ stateDiagram-v2
     L3_ACTIVE --> TAKEOVER_REQUEST: ODD violation
     DEGRADED --> TAKEOVER_REQUEST: ODD violation
     L3_ACTIVE --> MRM_EXECUTING: violation flagged critical
-    TAKEOVER_REQUEST --> L3_ACTIVE: driver takes over
-    TAKEOVER_REQUEST --> MRM_EXECUTING: 10 s elapsed or critical
-    MRM_EXECUTING --> SAFE_STOP: ego speed <= 0.3 m/s
+    TAKEOVER_REQUEST --> DRIVER_CONTROL: takeover ACK (simulated)
+    DRIVER_CONTROL --> L3_ACTIVE: engage request AND ODD normal
+    TAKEOVER_REQUEST --> MRM_EXECUTING: 10 s elapsed, critical, or invalid dt
+    MRM_EXECUTING --> SAFE_STOP: valid ego speed <= 0.3 m/s
 ```
 
-`TOR_WINDOW_S = 10.0` and `MRM_DECEL_FRAC = 0.35` (`config.py:262-263`). The MRM
-deceleration target is `0.35 · μ · g` (`mrm_controller.py:76-87`) — a fraction of
-available grip rather than a fixed number, so the manoeuvre is gentler on ice than
-on dry tarmac. A violation marked `critical` (redundancy lost, visibility < 10 m, or
-μ < 0.2) skips the takeover window entirely (`odd_monitor.py:56`,
-`mrm_controller.py:40-44`). `SAFE_STOP` has no exit transition inside the state
-machine; resuming is the orchestrator's decision, not the state machine's
-(`mrm_controller.py:73`).
+**Ownership.** The state machine now reports `control_owner` (`system` or
+`driver`) and `autonomy_enabled`. A takeover acknowledgement moves to
+`DRIVER_CONTROL` once; repeated acknowledgements are ignored, and automation
+returns only on an explicit engage request with the ODD `NORMAL` (until
+2026-09-25 it returned to `L3_ACTIVE` directly, which with the ODD still violated
+re-issued a TOR every tick). The acknowledgement is the simulated
+`--driver-takeover` flag; there is no manual input device, so every output
+carries `human_takeover_verified: false`. After the acknowledgement the
+configured custom controller keeps driving as a stand-in for the driver, and the
+AEB stays active regardless of owner. TOR, takeover and MRM events are counted on
+transitions. The TOR window advances by the simulation step `chinh.py` passes in —
+the validated LiDAR-timestamp delta, not the configured 0.025 s
+([`METRIC_DEFINITIONS.md`](METRIC_DEFINITIONS.md#simulation-step-for-the-algorithms-simclock));
+a negative or non-finite step fails toward the MRM.
 
-`mrm_controller.py` imports nothing from CARLA (`:13-14`), which is why the whole L3
+`TOR_WINDOW_S = 10.0` and `MRM_DECEL_FRAC = 0.35` (`config.py:269-270`). The MRM
+deceleration target is `0.35 · μ · g` (`mrm_controller.py:132-138`) — a fraction of
+available grip rather than a fixed number, so the manoeuvre is gentler on ice than
+on dry tarmac. A violation marked `critical` (all enabled range sensing lost, visibility < 10 m, or
+μ < 0.2 — absolute thresholds on the current estimate, not a measured rate of
+degradation) skips the takeover window entirely (`odd_monitor.py:100`,
+`mrm_controller.py:64-68`). `SAFE_STOP` has no exit transition inside the state
+machine; resuming is the orchestrator's decision, not the state machine's
+(`mrm_controller.py:119`).
+
+`mrm_controller.py` imports nothing from CARLA (only `math`, `:31`), which is why the whole L3
 chain is exercised by the simulator-free self-test.
 
 ---
@@ -529,15 +568,17 @@ native crash can be localised to the phase that was running.
 ## 12. Known architectural gaps
 
 Recorded because an architecture document that only describes the intent is a
-brochure. Twelve have been recorded. Five are fixed — two found by writing this
-document, two by an external review that checked its claims against the code, and
-one group of six fail-open paths (G12) by a second review that arrived as a script
-of offline probes — and they are kept in [Resolved](#resolved) below rather than
-deleted. G9–G11 came from that second review and are open.
+brochure. Thirteen have been recorded. Six are fixed — two found by writing this
+document, two by an external review that checked its claims against the code, one
+group of six fail-open paths (G12) by a second review that arrived as a script of
+offline probes, and a second group (G13) by the written remediation brief that
+accompanied it — and they are kept in [Resolved](#resolved) below rather than
+deleted. G9 is partly fixed; G10 and G11 are open. None of the 2026-09-25 fixes has
+been run on the simulator yet.
 
 **G5 — The README state diagram is incomplete.** It shows four states; the
 implementation also emits `BRAKE_HOLD` and `BRAKE_TO_STOP`
-(`active_safety.py:332, 385, 444`). The diagram in [§7.3](#73-the-committed-state-machine)
+(`active_safety.py:377, 384, 444, 503`). The diagram in [§7.3](#73-the-committed-state-machine)
 is the complete one.
 
 **G6 — `carla_host_guard.py` is not wired into the main pipeline.** It is used only
@@ -584,27 +625,32 @@ hypothesis; it has not been traced. Evidence:
 [`docs/benchmarks/head_doc_probe.json`](benchmarks/head_doc_probe.json),
 [`pre_f02_doc_heavyrain.json`](benchmarks/pre_f02_doc_heavyrain.json).
 
-**G9 — A critical brake can release onto an object that is still there. Open.**
-Found by the 2026-09-25 evidence review, reproduced offline. After a critical
-brake latches, five consecutive frames with an empty LiDAR corridor release it
-(`lost_frames_tol = 4`, `active_safety.py`), and while it holds, the brake level
-drops from 1.0 to 0.7. The hold exists so that a sparse cone flickering in and out
-of the point cloud does not release the brake — but an empty corridor looks exactly
-the same when an object has moved into the LiDAR's near-field blind zone, which is
-what a low object does as the car closes on it.
+**G9 — A critical brake could release onto an object that is still there.
+Partly fixed 2026-09-25.**
+Found by the 2026-09-25 evidence review, reproduced offline. After a critical brake
+latched, five consecutive frames with an empty LiDAR corridor released it
+(`lost_frames_tol = 4`), and while it held, the brake dropped from 1.0 to 0.7 —
+whether or not those frames carried valid data.
 
-Not fixed, deliberately. Every candidate repair — keep the latch until the vehicle
-stops, or until it has travelled past the last-seen obstacle position, and keep the
-latched brake level while holding — changes live AEB behaviour in every braking
-scenario, and has to be re-run on the simulator before it is trusted. A safety
-change that has only been reasoned about is not a safety change.
+*Fixed:* missing or invalid LiDAR data no longer counts toward release
+(`BRAKE_HOLD_NO_DATA` holds at the latched level indefinitely); holding never
+weakens the brake; release needs 0.1 s of clear corridor observed on valid frames,
+timed in seconds rather than frames. At the nominal 40 Hz the release cadence is
+unchanged, so the published scenario results remain comparable.
+*Still open:* an object that has moved into the LiDAR's near-field blind zone
+produces a **valid** empty corridor, which no rule at this layer can tell apart
+from a clear road. Candidate repairs (hold until the ego has travelled past the
+last-seen obstacle position, or until stopped) change live behaviour more deeply.
+*Not run:* the new rule has not been exercised on the simulator.
 
 **G10 — The MRM brakes in a straight line. Open, found by reading.**
 `ego_control.py` builds the MRM command as `VehicleControl(brake=…, hand_brake=…)`,
-which leaves steering at 0. An MRM started on a curve at 50 km/h with μ 0.4 brakes at
-about 1.4 m/s² — roughly 70 m to rest — with the wheels straight. Not reproduced in
-the simulator; the fix is to keep the lateral controller tracking the lane during an
-MRM, which touches the same live paths as G9.
+which leaves steering at 0 (now explicit: `steer=0.0` is written, and documented as a
+degraded lateral fallback, not lane keeping). An MRM started on a curve at 50 km/h
+with μ 0.4 brakes at about 1.4 m/s² — roughly 70 m to rest — with the wheels
+straight. Not reproduced in the simulator; the fix is to keep the lateral
+controller tracking the lane during an MRM, which changes live behaviour and needs
+a curved-road run to validate.
 
 **G11 — The ODD monitor's friction violation cannot be reached in this simulation.
 Open, and not a bug in either module.** `weather_model.estimate_conditions` maps
@@ -619,6 +665,32 @@ would be tuning the data to hit a gate, so the gap is recorded instead.
 
 Kept here rather than deleted, because how a defect was found and what it turned
 out to cost is part of the architecture's history.
+
+**G13 — Evidence paths that could not fail, or failed silently. Fixed 2026-09-25
+(offline).** From the remediation brief that accompanied the G12 probes; details
+and test names in [`EVIDENCE_REMEDIATION_RESULTS.md`](EVIDENCE_REMEDIATION_RESULTS.md).
+
+- *A NaN or out-of-range command could reach the simulator.* Every custom-stack
+  command is now validated before the RPC; an invalid one is a control fault
+  (latched safe stop). Throttle is zero whenever the brake is applied.
+- *A LiDAR read timeout bypassed health and fallback.* It now records the loss and
+  attempts a safe stop, recording whether the command was sent or the RPC failed.
+- *The real-time criterion was the HUD's moving average.* It is now measured
+  control updates over the active control window (`modules/control_timing.py`),
+  and the algorithms receive the validated simulation step instead of the
+  configured one.
+- *Reaction latency could credit a reaction that ended before the hazard* (v1
+  clamped `reaction − hazard` at zero). v2 measures to the first reaction at or
+  after the hazard and flags preemptive responses.
+- *Scenario errors were swallowed* (`except: pass` in the tick and actor
+  callbacks), and cleanup failures were console warnings. Both now make the case
+  INVALID/ERROR; the verdict is final only after cleanup.
+- *Suites were judged by row count against a hard-coded 18/45.* They now carry a
+  planned matrix, report planned/attempted/passed/failed/invalid/error/not_run,
+  checkpoint after every case, and exit nonzero unless the gate passes.
+- *The L3 harness graded a profile without a declared expected ODD against its own
+  observation*, and after the G12 gate change every L3 profile row collapsed into
+  one "duplicate" case (profile rows have no `name`). Both fixed.
 
 **G12 — Six fail-open paths found by an evidence review. Fixed 2026-09-25.**
 An external review arrived as a script of offline probes, each reproducing one
@@ -722,14 +794,14 @@ quietly become vacuous if the constants change.
 
 ```mermaid
 flowchart BT
-    A["selftest.py — 209 checks, 17 areas<br/>no CARLA, no torch, no weights"]
+    A["selftest.py — 210 checks, 17 areas<br/>no CARLA, no torch, no weights"]
     B["test_*.py unit suite<br/>runs locally, imports CARLA client and torch"]
     C["run_scenarios.py — 15-scenario catalog, 6-scenario core suite<br/>seeded × weather × fault matrix"]
     D["evaluate_l3.py — weather-profile L3 evaluation"]
     A --> B --> C --> D
 ```
 
-**Tier 1 — simulator-free self-test.** `selftest.py` runs **209 checks across 17
+**Tier 1 — simulator-free self-test.** `selftest.py` runs **210 checks across 17
 areas** and imports neither CARLA, nor torch, nor ultralytics — no simulator, no
 GPU, no model weights. It does need a handful of ordinary libraries, and this
 document previously said otherwise: `selftest.py` imports
@@ -743,8 +815,9 @@ experiment and controller, sensor frame integrity, planning and control, traffic
 semantics, and the radar/health/async/lane contracts. This tier exists so that the
 safety logic is verifiable in CI, where no simulator can run.
 
-**Tier 2 — unit suite.** Of the 23 `test_*.py` modules under `tests/`, **17 run
-with no CARLA client, no torch and no weights — 237 tests** — and they now run on
+**Tier 2 — unit suite.** Of the 24 `test_*.py` modules under `tests/`, **18 run
+with no CARLA client, no torch and no weights — 306 tests** (of 409 in total on
+2026-09-25) — and they now run on
 every push as the `offline-tests` CI job. The remaining six import the CARLA client
 and stay local. Splitting them was the point: "needs a simulator" had been assumed
 of the whole suite, and it was only ever true of a quarter of it.
@@ -759,11 +832,15 @@ reaction delay ≤ 1.0 s, minimum clearance ≥ 0.25 m, zero sensor frame errors
 cut-ins must produce a brake or an evade. Reaction latency is measured from
 `hazard_frame`, not `trigger_frame`, because a cut-in actor is still in the adjacent
 lane when the trigger fires (`scenario_library.py:32-38`) — measuring from the wrong
-origin would flatter the result.
+origin would flatter the result. Since 2026-09-25 the reaction is the first one at
+or after the hazard (metric v2, never clamped), clearance is surface-to-surface,
+each case is PASS / FAIL / INVALID / ERROR and final only after its cleanup, and the
+suite is judged against a planned matrix with a nonzero exit code unless it passes
+([`METRIC_DEFINITIONS.md`](METRIC_DEFINITIONS.md#case-and-suite-status)).
 
 **CI** (`.github/workflows/selftest.yml`) runs three jobs on every push and pull
 request to `main`: Ruff correctness lint, Mypy over the safety-evidence core, and
-the 209-check self-test, and the 237 offline unit tests.
+the 210-check self-test, and the 306 offline unit tests.
 
 ---
 
