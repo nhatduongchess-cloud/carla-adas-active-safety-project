@@ -647,7 +647,10 @@ class PublishedV2ReportTests(unittest.TestCase):
     record. If the gate logic changes, this says which published number moved."""
 
     EXPECTED = {"v2_catalog_3seed": "PASS", "v2_core_5weather": "FAIL",
-                "v2_core_smoke": "PASS", "v2_range_loss": "PASS"}
+                "v2_core_smoke": "PASS", "v2_range_loss": "PASS",
+                "v2_doc_clear_10seed": "FAIL", "v2_doc_storm_10seed": "FAIL",
+                "v2_fault_lidar_loss": "PASS", "v2_fault_radar_loss": "PASS",
+                "v2_fault_camera_loss": "PASS"}
 
     def test_recorded_verdicts_reproduce_from_the_rows(self):
         import json

@@ -626,11 +626,20 @@ before**, because the 2026-09-01 harness recorded `hazard_frame: null` and
 `reaction_delay_s: 0.0` for every case, which made that acceptance criterion
 incapable of failing.
 
-The 49-frame figure is suspiciously constant across seeds and weather, which
-points at a fixed start-up cost — a tracker confirmation count, a smoothing
-window, or a first-inference warm-up — rather than at scene dynamics. That is a
-hypothesis; it has not been traced. Evidence:
-[`docs/benchmarks/head_doc_probe.json`](benchmarks/head_doc_probe.json),
+*Update, 2026-09-27 evening (ten seeds each in clear and storm, `b3bba41`).*
+8/10 and 7/10. Over all 29 v2 runs the reaction splits by the source that won
+the brake decision: 23 via the camera tracker at 0.50–0.95 s, all passing; 6 via
+the radar at exactly 1.225 s (frame 49, 8.23 m, TTC 0.99 s), all failing. The
+constant 49 frames is therefore the geometric path's detection point for this
+fixed scene, not a start-up cost; this paragraph previously guessed at a
+tracker confirmation count or inference warm-up, and the repeats replace that
+guess. The open question is narrower: why, in about one run in five, the camera
+tracker has not triggered the brake by 1.0 s. It is not seed-fixed (only
+seed 1 was late in both weathers) and ten runs per weather show no weather
+effect. The scenario reports have no per-frame trace, so it is not traced.
+Evidence: [`v2_doc_clear_10seed.json`](benchmarks/v2_doc_clear_10seed.json),
+[`v2_doc_storm_10seed.json`](benchmarks/v2_doc_storm_10seed.json),
+[`head_doc_probe.json`](benchmarks/head_doc_probe.json),
 [`pre_f02_doc_heavyrain.json`](benchmarks/pre_f02_doc_heavyrain.json).
 
 **G9 — A critical brake could release onto an object that is still there.

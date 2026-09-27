@@ -160,7 +160,9 @@ and abort conditions: [`docs/ARCHITECTURE.md` §7.3](docs/ARCHITECTURE.md#73-the
 The first live run of the 2026-09-25 code: commit `46bbaa4`, clean tree, CARLA
 `edf3e9f5c`, Town02, RTX 4070 Laptop, **CPU inference**, synchronous 0.025 s step
 — all recorded inside each report. Reaction delay is metric v2 and clearance is
-surface-to-surface. One run per matrix. Full reading:
+surface-to-surface. One run per matrix; follow-up runs the same evening on
+`b3bba41` (no runtime-code change) added ten-seed repeats, single-sensor faults
+and a soak attempt. Full reading:
 [`docs/benchmarks/README.md`](docs/benchmarks/README.md#evidence-v2-run-2026-09-27--the-current-results).
 
 | Check | Observed | Target | Result | Artifact |
@@ -169,24 +171,34 @@ surface-to-surface. One run per matrix. Full reading:
 | Core subset of that run | **18/18** | 18/18 | ✅ | same file |
 | **Acceptance gate** (core + catalog + no collision) | **PASS** | PASS | ✅ | same file, `acceptance_gate.status` |
 | Core × 5 weathers, seed 42 | **29/30** | 30/30 | ❌ | [`v2_core_5weather.json`](docs/benchmarks/v2_core_5weather.json) — `DynamicObjectCrossing` in storm, 1.225 s |
+| `DynamicObjectCrossing` × 10 seeds, clear · storm | **8/10 · 7/10** | 10/10 | ❌ | [`v2_doc_clear_10seed.json`](docs/benchmarks/v2_doc_clear_10seed.json), [`v2_doc_storm_10seed.json`](docs/benchmarks/v2_doc_storm_10seed.json) — every late run 1.225 s, via radar |
 | LiDAR + radar lost for 4 s (`HardBrake`) | **PASS** | PASS | ✅ | [`v2_range_loss.json`](docs/benchmarks/v2_range_loss.json) — brake held, then MRM → SAFE_STOP |
-| Collisions / frame errors / invalid cases, 78 scenario runs | **0 / 0 / 0** | 0 | ✅ | the three scenario files above plus [`v2_core_smoke.json`](docs/benchmarks/v2_core_smoke.json) |
+| One sensor lost for 4 s — LiDAR, radar, camera (`HardBrake`) | **3 PASS** | PASS | ✅ | [`v2_fault_*.json`](docs/benchmarks/README.md#single-sensor-loss-what-these-three-runs-do-and-do-not-show) — fault starts after the brake: shows the hold survives, not detection without the sensor |
+| Collisions / frame errors / invalid cases, 101 scenario runs | **0 / 0 / 0** | 0 | ✅ | all `v2_*` scenario files |
 | Smallest surface-to-surface clearance | **0.88 m** | ≥ 0.25 m | ✅ | `NoSignalJunctionCrossing`, seed 2026 |
 | Perception p95 per case (CPU) | **47–122 ms** | ≤ 50 ms | ❌ | reported, not gated by the harness |
 | Measured control rate, runtime smoke (5 s, empty road) | **39.7 Hz** | ≥ 38 Hz | ✅ | [`v2_runtime_smoke_async.json`](docs/benchmarks/v2_runtime_smoke_async.json) — run still `FAIL` on three latency criteria |
+| Soak, 300 s target, 20 NPC vehicles | **stopped at 51 s** | 300 s | ❌ | [`v2_soak_5min_20veh.json`](docs/benchmarks/v2_soak_5min_20veh.json) — LiDAR read timeout, safe stop sent, cleanup not verified; 38.5 Hz until then |
 
 **Read the 45/45 carefully.** `DynamicObjectCrossing` reacted within budget in all
 three catalog seeds (0.5 / 0.7 / 0.5 s), but the same scenario took 1.225 s in the
 storm case of the weather matrix, and 0.30 / 1.225 / 1.10 s on 2026-09-19. With one
 run per case, a code effect cannot be separated from run-to-run variation in CPU
-inference timing, so the late reaction is **not** claimed fixed (G8). The 78
-scenario runs also overlap in recipes and seeds; "no collision recorded" describes
-these runs, not a guarantee.
+inference timing, so the late reaction is **not** claimed fixed (G8). Ten-seed
+repeats then gave 8/10 in clear and 7/10 in storm: across all 29 runs on the v2
+code, the 23 on-time reactions (0.5–0.95 s) came from the camera tracker and the
+6 late ones were all exactly 1.225 s, from the radar. A late run is one where the camera
+tracker did not trigger the brake first and the geometric path caught the
+pedestrian at a fixed point; why the tracker did not is not yet diagnosed. The 101 scenario runs also
+overlap in recipes and seeds; "no collision recorded" describes these runs, not
+a guarantee.
 
 **The 39.7 Hz is a smoke measurement:** 200 control updates over 5.03 s wall on
 an empty road, headless, `low-memory` profile, with interval p99 51.5 ms. It is the
 first measured control rate in the project, and it is not a qualification of
-real-time operation.
+real-time operation. A 300 s soak with 20 NPC vehicles held 38.5 Hz for 53 s and
+then stopped on a LiDAR read timeout, with the server no longer answering
+cleanup calls.
 
 ### Scenario harness — re-run on HEAD, 2026-09-19 (superseded)
 
@@ -304,12 +316,12 @@ Hands-on testing exposed a false positive: with zero traffic, AEB latched to a s
 
 Honesty about limits is part of the engineering.
 
-- **Native engine crash (B01) on heavy capture.** On the local custom CARLA build (`edf3e9f5c`, UE4 4.26.2), the fuller capture stack can trigger an intermittent native `EXCEPTION_ACCESS_VIOLATION` in skeletal-mesh scene-proxy render dispatch (`FSkeletalMeshSceneProxy` / `MeshObject`) during camera scene-capture. It has been reproduced across D3D11 and D3D12, `-onethread`, and low-render configurations; the available minidumps lack the heap needed to prove the object-lifetime root cause, and no matching native source/build tree is available to repair it. **Consequence:** demos and captures are scoped to a stable envelope (Low quality, 640×360, bounded runs). A full write-up is in [`docs/B01_FAILURE_ANALYSIS.md`](docs/B01_FAILURE_ANALYSIS.md).
+- **Native engine crash (B01) on heavy capture.** On the local custom CARLA build (`edf3e9f5c`, UE4 4.26.2), the fuller capture stack can trigger an intermittent native `EXCEPTION_ACCESS_VIOLATION` in skeletal-mesh scene-proxy render dispatch (`FSkeletalMeshSceneProxy` / `MeshObject`) during camera scene-capture. It has been reproduced across D3D11 and D3D12, `-onethread`, and low-render configurations; the available minidumps lack the heap needed to prove the object-lifetime root cause, and no matching native source/build tree is available to repair it. **Consequence:** demos and captures are scoped to a stable envelope (Low quality, 640×360, bounded runs). A full write-up is in [`docs/B01_FAILURE_ANALYSIS.md`](docs/B01_FAILURE_ANALYSIS.md). The 2026-09-27 soak (20 NPC vehicles) stopped after 51 s on a LiDAR read timeout, after which the server stopped answering cleanup calls — consistent with a server hang or crash; the report cannot tell which.
 - **An MRM brakes in a straight line, and an object inside the LiDAR near-field blind zone looks like a clear road.** Recorded as gaps G10 and G9 in [`docs/ARCHITECTURE.md` §12](docs/ARCHITECTURE.md#12-known-architectural-gaps). G9 is partly fixed (2026-09-25): missing LiDAR data no longer releases a latched brake, and holding no longer weakens it from 1.0 to 0.7 — seen live in the 2026-09-27 range-loss run (`BRAKE_HOLD_NO_DATA`, 9.4% of the run). The blind-zone case remains, and no curved-road MRM has been run.
 - **Takeover is simulated.** `--driver-takeover` is a flag; there is no manual input device and no verified human takeover. After the acknowledgement the configured controller keeps driving as a stand-in, and the AEB stays active.
-- **`DynamicObjectCrossing` reacts near, and sometimes over, the 1.0 s budget.** Across the 2026-09-27 runs it reacted in 0.5–0.85 s in eight of nine cases and **1.225 s** in the storm case, which fails the weather matrix (29/30). On 2026-09-19 it gave 0.30 / 1.225 / 1.10 s across seeds. It brakes and has never collided; the smallest surface-to-surface clearance to the pedestrian in the v2 runs was 2.21 m. For this recipe the hazard origin is the trigger frame (walker spawned ≈20 m ahead, trigger at 22 m, 1.6 m/s), and the recurring 1.225 s (49 frames) points at a fixed start-up cost, but the cause — oracle, warm-up, actor placement, controller or perception — is **not diagnosed**, and one run per case cannot separate a fix from run-to-run variation. Evidence: [`v2_core_5weather.json`](docs/benchmarks/v2_core_5weather.json), [`head_doc_probe.json`](docs/benchmarks/head_doc_probe.json), [`pre_f02_doc_heavyrain.json`](docs/benchmarks/pre_f02_doc_heavyrain.json).
+- **`DynamicObjectCrossing` misses the 1.0 s budget in about one run in five.** Across 29 runs on the v2 code it was late in 6 (2/10 clear and 3/10 storm in the ten-seed repeats, plus the storm case of the weather matrix, which fails it at 29/30). Every late run reacted at exactly **1.225 s** through the radar; every on-time run (0.50–0.95 s) through the camera tracker. The 1.225 s is when the geometric path sees the pedestrian inside the corridor; the budget is met only when the camera tracker triggers the brake first. Why it does not in those runs is **not diagnosed** — the scenario reports have no per-frame trace. No run collided; surface clearance to the pedestrian was 2.02–2.26 m in the late runs and 2.31–3.87 m in the others. Evidence: [`v2_doc_clear_10seed.json`](docs/benchmarks/v2_doc_clear_10seed.json), [`v2_doc_storm_10seed.json`](docs/benchmarks/v2_doc_storm_10seed.json), [`v2_core_5weather.json`](docs/benchmarks/v2_core_5weather.json); in the older [`head_doc_probe.json`](docs/benchmarks/head_doc_probe.json) every radar-decided reaction was also 1.225 s.
 - **Detector accuracy is not qualified.** The demo uses pretrained COCO weights; a custom CARLA-domain 8-class detector is future work and does not yet meet an accuracy bar.
-- **Runtime latency targets are not met on CPU inference.** Perception p95 was 47–122 ms per case against 50 ms, and the 5 s runtime smoke still failed its safety-p99, perception-p95 and inference-age criteria even though the measured control rate was 39.7 Hz. No GPU-inference run has been published.
+- **Runtime latency targets are not met on CPU inference.** Perception p95 was 47–122 ms per case against 50 ms, and the 5 s runtime smoke still failed its safety-p99, perception-p95 and inference-age criteria even though the measured control rate was 39.7 Hz. In the 20-vehicle soak, 36% of safety-control samples exceeded 25 ms (p99 44.3 ms). No GPU-inference run has been published.
 - **Not a real-vehicle system.** This is a simulation study; it is not validated ADAS/L3 for a physical vehicle.
 
 ## Tech stack

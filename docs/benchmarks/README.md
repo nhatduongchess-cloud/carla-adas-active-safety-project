@@ -37,7 +37,8 @@ smoke run, and 0.7 / 0.85 / 0.75 / 0.6 / **1.225 s** across the five weathers. O
 2026-09-19 the same seeds gave 0.30 / 1.225 / 1.10 s. The 45/45 therefore does
 **not** mean the late reaction is fixed: one run per case cannot separate a code
 effect from run-to-run variation in CPU inference timing, and the storm case still
-fails at exactly the old 1.225 s. The cause remains undiagnosed (G8).
+fails at exactly the old 1.225 s. Ten-seed repeats (next section) show when
+it is late and through which sensor; why is still open (G8).
 
 **The new brake-release rule, first seen live.** In `v2_range_loss.json` the ego
 spent 9.4% of the run in `BRAKE_HOLD_NO_DATA` — the latched brake held while the
@@ -67,9 +68,93 @@ in the project, and it is five seconds on an empty road with 0 NPCs, headless,
 inference age p95 157 ms > 150 ms. Cleanup verified; no collision; AEB never
 triggered (`decision_trace`: 200 × DRIVE).
 
-**Not in these files:** GPU inference, other towns, more than one run per case,
-a soak, a curved-road MRM, the near-field blind-zone case (G9), or anything on a
-real vehicle.
+**Not in these files:** GPU inference, other towns, a curved-road MRM, the
+near-field blind-zone case (G9), or anything on a real vehicle. Repeats of
+`DynamicObjectCrossing`, single-sensor faults and a soak attempt follow.
+
+## Follow-up runs, 2026-09-27 evening (commit `b3bba41`)
+
+Same machine and CARLA build as the v2 run. Commit `b3bba41` only added the v2
+reports, docs and a test, so the runtime code is the one measured above; each
+scenario report records `git_commit: b3bba41…`, `git_dirty: false`. The runtime
+(`chinh.py`) report does not yet carry a provenance block, so the soak's commit is
+not recorded in its file.
+
+| Artifact | Suite | Cases | Result |
+|---|---|---:|---|
+| [`v2_doc_clear_10seed.json`](v2_doc_clear_10seed.json) | `DynamicObjectCrossing`, seeds 1–10, clear | 10 | **8 PASS / 2 FAIL** — seeds 1 and 9 reacted in 1.225 s |
+| [`v2_doc_storm_10seed.json`](v2_doc_storm_10seed.json) | `DynamicObjectCrossing`, seeds 1–10, storm | 10 | **7 PASS / 3 FAIL** — seeds 1, 3 and 4 reacted in 1.225 s |
+| [`v2_fault_lidar_loss.json`](v2_fault_lidar_loss.json) | `HardBrake`, LiDAR lost 5–9 s | 1 | PASS — ODD stayed NORMAL, no MRM |
+| [`v2_fault_radar_loss.json`](v2_fault_radar_loss.json) | `HardBrake`, radar lost 5–9 s | 1 | PASS — ODD stayed NORMAL, no MRM |
+| [`v2_fault_camera_loss.json`](v2_fault_camera_loss.json) | `HardBrake`, camera lost 5–9 s | 1 | PASS — ODD stayed NORMAL, no MRM |
+| [`v2_soak_5min_20veh.json`](v2_soak_5min_20veh.json) | `chinh.py`, 300 s target, 20 NPC vehicles, async-stable | — | **`FAIL`** — stopped at 51 s on a LiDAR read timeout; cleanup not verified |
+| [`v2_soak_decision_trace.json.gz`](v2_soak_decision_trace.json.gz) | the soak's decision trace (gzip) | — | last 512 of 1,213 brake frames |
+| [`v2_soak_telemetry.csv`](v2_soak_telemetry.csv) | the soak's 5 Hz telemetry (time, position, speed, tracked objects) | — | — |
+
+No collision, frame error, INVALID or ERROR case in the 23 scenario runs; cleanup
+verified in each.
+
+### `DynamicObjectCrossing`: the late reactions have one signature
+
+Across all 29 runs of this scenario on the v2 code (3 catalog, 5 weather, 1
+smoke, 20 repeats), the reaction splits cleanly by the source that won the
+brake decision (`source_at_reaction`):
+
+| Reacting source | Runs | Reaction delay | Result | Surface clearance |
+|---|---:|---|---|---|
+| camera tracker | 23 | 0.50–0.95 s | all PASS | 2.31–3.87 m |
+| radar | 6 | **1.225 s in every run** (frame 49, 8.23 m, TTC 0.99 s) | all FAIL | 2.02–2.26 m |
+
+So the constant 1.225 s is not a random slow reaction: it is the moment the
+geometric (radar/LiDAR) path detects the pedestrian inside the driving corridor,
+and it is the same in every run because the scenario geometry is. The 1.0 s budget
+is met only when the camera tracker triggers the brake earlier; in 6 of 29 runs
+it did not. Late runs occurred 2/10 in clear and 3/10 in storm — with ten runs
+each that is not evidence of a weather effect — and not on a fixed set of seeds
+(only seed 1 was late in both). **Why the tracker missed in those runs is not
+diagnosed**: the scenario reports carry no per-frame trace. Even the late runs
+stopped with 2.0–2.3 m surface clearance and no contact; that is a measurement of
+these runs, not a safety claim. In every earlier published run, a radar-decided reaction was
+also exactly 1.225 s (`head_*` files); on that older code the tracker was
+sometimes late too (1.10 s twice in `head_doc_probe.json`).
+
+### Single-sensor loss: what these three runs do and do not show
+
+All three pass with the same numbers (reaction at frame 5 via radar, 0.0 s delay,
+5.78 m clearance) because `HardBrake`'s hazard fires at 0.125 s and the fault
+window starts at 5 s. They show that losing one sensor while stopped **does not
+release the latched brake and does not raise an ODD violation or an MRM** (range
+redundancy kept, as `fault_acceptance` requires). They do **not** show detection
+with a sensor missing. That needs the fault active before the hazard
+(`--fault-start 0 --fault-duration 20`), not yet run. In the radar-loss run the
+arbiter spent 0.2% of frames in `NORMAL` and 0.2% in `BRAKE_TO_STOP` (about two
+frames each); not investigated.
+
+### Soak attempt: stopped at 51 s
+
+- **Stop.** After 2,051 control updates (51.3 s simulated) of the planned 300 s,
+  `chinh.py` stopped on `TimeoutError: async-stable timeout chờ LiDAR geometry`.
+  This is the first live exercise of the timeout path (R9c): the loss was recorded
+  and the safe-stop command was sent (`sensor_loss_fallback.command_sent: true`).
+  Whether the vehicle then stopped is not recorded.
+- **Cleanup failed.** Ten `actor.destroy` calls returned false, the rest reported
+  "server unavailable or budget exhausted", and the 20 s cleanup budget ran out.
+  That is consistent with the server hanging or crashing (see B01); the report
+  cannot say which. The run correctly reports `FAIL` with
+  `cleanup_verified: false`.
+- **Until the stop.** Delivered control rate **38.5 Hz** over 53.3 s of active
+  window with 20 NPC vehicles (real-time factor 0.962; the ≥ 38 Hz criterion
+  passed), control interval p50 24.8 / p95 35.1 / p99 45.2 / max 69.5 ms, 10
+  intervals over 50 ms. No collision, no frame error, sensor availability ≥ 99.9%.
+- **Latency.** Safety-control p99 44.3 ms, with 734 of 2,051 samples (36%) over
+  25 ms; neural inference p95 99 ms against 50 ms; inference age p95 5.1 s — not
+  explained.
+- **Driving.** The telemetry shows the ego moved 3.4 m, stopped at 5.6 s, and
+  stayed stopped until 31.4 s with a radar target about 22 m ahead in its lane at
+  zero closing speed (`BRAKE_TO_STOP`); it then drove about 165 m, up to
+  34.5 km/h. The retained trace covers the last 12.8 s of that stop. The camera
+  tracker reported a tracked object in 9 of 342 telemetry samples, and the learned
+  lane was selected in 0 of 2,051 frames (map fallback throughout).
 
 ## Run on HEAD, 2026-09-19 (superseded by the v2 run above)
 

@@ -218,6 +218,20 @@ INVALID/ERROR cases, zero scenario execution errors, cleanup verified in every
 case. One run per case: run-to-run variation is not measured, which matters for
 `DynamicObjectCrossing` (0.5–1.225 s today).
 
+### Follow-up runs, 2026-09-27 evening (`b3bba41`)
+
+| Check | Report | Result |
+|---|---|---|
+| `DynamicObjectCrossing` × 10 seeds, clear | `v2_doc_clear_10seed.json` | 8/10 — late runs 1.225 s, via radar |
+| `DynamicObjectCrossing` × 10 seeds, storm | `v2_doc_storm_10seed.json` | 7/10 — late runs 1.225 s, via radar |
+| One sensor lost (LiDAR / radar / camera), `HardBrake` | `v2_fault_*_loss.json` | 3 PASS; hold kept, ODD NORMAL, no MRM; fault starts after the hazard |
+| LiDAR read timeout in `chinh.py` (R9c) | `v2_soak_5min_20veh.json` | observed live: loss recorded, safe-stop command sent |
+| Soak, 300 s, 20 NPC vehicles | `v2_soak_5min_20veh.json` | `FAIL` — stopped at 51 s; cleanup not verified (server unresponsive); 38.5 Hz until then |
+
+The repeats narrow the `DynamicObjectCrossing` question (§7.3): all 6 late runs
+of 29 were decided by the radar at the same geometric point, all 23 on-time runs
+by the camera tracker. The per-frame diagnosis trace is still not done.
+
 ## Measured FPS / latency
 
 **Measured once, as a smoke test.** `v2_runtime_smoke_async.json`: 200 unique
@@ -257,7 +271,7 @@ matrix; no repeat runs, no GPU inference, no other town, no soak.
 | Reaction metric versioned; decision vs applied vs motion separated | partial — versioned, decision only |
 | Actor-origin distance not called surface clearance | done |
 | Unique/complete matrix; empty/duplicate/partial suites never PASS | done |
-| Verdict/exit code after cleanup; partial reports kept | done; cleanup verified live in all 78 cases; the failure path is exercised offline only |
+| Verdict/exit code after cleanup; partial reports kept | done; cleanup verified live in all 101 scenario cases; the runtime's failure path seen live in the soak (cleanup not verified → FAIL); the scenario runner's failure path is exercised offline only |
 | Configured Hz, measured Hz, sim time, real-time factor separated | done; measured once (5 s smoke, 39.7 Hz) |
 | Provenance, counts/windows, missing-data status, no NaN in JSON | partial — scenario reports only |
 | Weather/SNR/μ proxies not described as physics | done |
