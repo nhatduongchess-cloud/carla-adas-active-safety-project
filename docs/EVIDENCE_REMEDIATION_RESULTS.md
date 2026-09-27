@@ -1,14 +1,15 @@
-# Evidence remediation — results, 2026-09-25
+# Evidence remediation — results, 2026-09-25 (live runs added 2026-09-27)
 
 What was done against the remediation brief of 2026-09-25 (written for commit
 `07717f7`) and its accompanying probe script
 ([`scripts/claude_evidence_review_20260925.py`](../scripts/claude_evidence_review_20260925.py)),
 what was verified and how, and what was not done.
 
-**Headline.** The code, tests and documentation parts are done and verified
-offline. **No simulator run was made** — no CARLA server was running on the
-development machine (no `CarlaUE4` process, port 2000 closed) — so every
-simulation check below is `NOT_RUN`, and no published result has changed.
+**Headline.** The code, tests and documentation parts were done and verified
+offline on 2026-09-25, when no CARLA server was running. **The planned
+simulation checks were then run on 2026-09-27** on commit `46bbaa4` (clean tree),
+one run per matrix — see [Simulation verification](#simulation-verification-2026-09-27).
+Only the curved-road MRM remains `NOT_RUN`.
 
 ## Commits
 
@@ -194,38 +195,45 @@ Status words: **done** (implemented and tested offline), **partial**, **not done
   table (90 = 45 + 30 + 6 + 9, overlapping), demo rate, limitations, engineering
   notes corrected; B01 §3b now says "consistent with", not "directly confirms".
 
-## Simulation verification — NOT_RUN
+## Simulation verification, 2026-09-27
 
-Every item below needs a CARLA server and was not run. Nothing here may be
-reported as observed.
+Run by the owner on the development machine: CARLA `edf3e9f5c` (client and
+server), Town02, Windows 11, RTX 4070 Laptop, CPU inference, commit `46bbaa4` with
+`git_dirty: false` — all recorded in each file's `run.provenance`. Reports in
+[`benchmarks/`](benchmarks/README.md#evidence-v2-run-2026-09-27--the-current-results).
 
-| Check | Planned command (from the brief, §14.3) | Status |
+| Check | Report | Result |
 |---|---|---|
-| Runtime smoke, async | `chinh.py --town Town02 --vehicles 0 --seed 42 --duration 5 --no-display --performance-profile low-memory --runtime-mode async-stable --inference-device cpu --run-report logs/evidence_v2_smoke_async.json` | NOT_RUN |
-| Core smoke | `run_scenarios.py --scenarios HardBrake,DynamicObjectCrossing --town Town02 --seed 42 --weather clear --seconds 20 --inference-device cpu --report logs/evidence_v2_core_smoke.json` | NOT_RUN |
-| Catalog × 3 seeds | `run_scenarios.py --scenarios all --town Town02 --seeds 42,1337,2026 --weather clear --seconds 20 --inference-device cpu --report logs/evidence_v2_catalog_3seed.json` | NOT_RUN |
-| Core × 5 weathers | `run_scenarios.py --scenarios core --town Town02 --seed 42 --weathers clear,light_rain,heavy_rain,fog,storm --seconds 20 --inference-device cpu --report logs/evidence_v2_core_5weather.json` | NOT_RUN |
-| Range loss | `run_scenarios.py --scenarios HardBrake --town Town02 --seed 42 --weather clear --seconds 20 --fault lidar-radar-loss --fault-start 5 --fault-duration 4 --inference-device cpu --report logs/evidence_v2_range_loss.json` | NOT_RUN |
-| Brake release with the new rule | the scenario runs above | NOT_RUN |
-| Curved-road MRM | no command exists yet | NOT_RUN |
+| Runtime smoke, async, 5 s | `v2_runtime_smoke_async.json` | `FAIL` (safety p99 33.8 ms, perception p95 69 ms, inference age p95 157 ms); control rate **39.7 Hz measured**; cleanup verified; 0 collisions |
+| Core smoke | `v2_core_smoke.json` | 2/2 PASS |
+| Catalog × 3 seeds | `v2_catalog_3seed.json` | **45/45 PASS, gate PASS** |
+| Core × 5 weathers | `v2_core_5weather.json` | **29/30, gate FAIL** — `DynamicObjectCrossing` storm 1.225 s |
+| Range loss (LiDAR + radar, 4 s) | `v2_range_loss.json` | PASS — brake held (`BRAKE_HOLD_NO_DATA` 9.4%), ODD VIOLATION, MRM → SAFE_STOP |
+| Brake release with the new rule | range-loss run | observed: no release on missing data |
+| Surface clearance criterion | all scenario runs | first live use; minimum 0.88 m ≥ 0.25 m |
+| Curved-road MRM | — | **NOT_RUN** (no command exists) |
 
-Write new reports to new file names; do not overwrite the
-`docs/benchmarks/head_*` files. A non-PASS suite now exits nonzero, so a script
-chaining these commands must not stop at the first failure if the whole matrix is
-wanted.
+Across the 78 scenario runs: no collision recorded, zero frame errors, zero
+INVALID/ERROR cases, zero scenario execution errors, cleanup verified in every
+case. One run per case: run-to-run variation is not measured, which matters for
+`DynamicObjectCrossing` (0.5–1.225 s today).
 
 ## Measured FPS / latency
 
-**Not measured.** The new control-window measurement has never run. The only
-published runtime report (2026-09-12 demo) gives 20.0 frames per wall-second
-**including teardown**, with `fps_ema` 44.9 as a HUD value; neither is a
-control-rate measurement.
+**Measured once, as a smoke test.** `v2_runtime_smoke_async.json`: 200 unique
+control updates in 5.03 s of active control window → **39.7 Hz delivered**,
+simulated 5.03 s, real-time factor 0.999, control interval p50 24.8 / p95 30.8 /
+p99 51.5 / max 83.1 ms, 3 deadline misses (> 50 ms). Hardware: RTX 4070 Laptop
+machine, CPU inference, `low-memory`, headless, 0 NPCs, empty road. Five seconds
+is not a sustained-rate qualification. Neural inference p95 was 69 ms (object
+detection) and 120 ms (learned lane) against a 50 ms target.
 
 ## Claims that can be used now
 
 Exact wording is in [`CLAIM_EVIDENCE_REGISTER.md`](CLAIM_EVIDENCE_REGISTER.md).
-Usable: C1 (with its conditions), C4 and C5 (historical, dated, with the gate
-FAIL), C7, C12, C13, C14, C16, C17. Withdrawn: "no learned component can
+Usable: C1 (with its conditions), C4 and C5 (now the 2026-09-27 v2 results, dated,
+with the weather-matrix FAIL), C7, C10 (as a 5 s smoke measurement only), C12,
+C13, C14, C16, C17. Withdrawn: "no learned component can
 suppress it", "any obstacle", "never creeps", "late, not unsafe", runtime
 rain-aware fusion, and any 40 Hz / real-time / hard-deadline statement.
 
@@ -234,27 +242,27 @@ rain-aware fusion, and any 40 Hz / real-time / hard-deadline statement.
 Native crash B01 (open); human takeover (simulated flag only); physical friction
 (heuristic proxy, μ < 0.3 unreachable in CARLA weather); MRM steering (G10);
 near-field blind zone after a brake (G9 remainder); detector accuracy; no
-validation outside the simulator. The 2026-09-25 changes are verified offline
-only.
+validation outside the simulator. The 2026-09-25 changes have one live run per
+matrix; no repeat runs, no GPU inference, no other town, no soak.
 
 ## Definition of done (brief §17)
 
 | Item | Status |
 |---|---|
-| AEB not weakened by MRM comfort; fault latch kept | done (offline) |
+| AEB not weakened by MRM comfort; fault latch kept | done (offline); live range-loss run shows the arbiter selecting the stronger request (MRM 1.0 over AEB hold 0.7) |
 | Valid brake/throttle/steer, one command per cycle, ownership | done (offline); lateral hold at 0 is an explicit fallback |
 | NaN / missing / stale input never becomes ODD NORMAL or scenario PASS | done for ODD and scenario verdicts; stale handling only via existing freshness gates |
-| Sole range loss detected; missing geometry does not release the latch | done (offline) |
+| Sole range loss detected; missing geometry does not release the latch | done; the latch hold seen live under dual LiDAR+radar loss; the radar-disabled sole-LiDAR case is offline only |
 | Takeover ACK does not re-engage in violation; honest manual-source status | done |
 | Reaction metric versioned; decision vs applied vs motion separated | partial — versioned, decision only |
 | Actor-origin distance not called surface clearance | done |
 | Unique/complete matrix; empty/duplicate/partial suites never PASS | done |
-| Verdict/exit code after cleanup; partial reports kept | done (offline) |
-| Configured Hz, measured Hz, sim time, real-time factor separated | done in code; never measured |
+| Verdict/exit code after cleanup; partial reports kept | done; cleanup verified live in all 78 cases; the failure path is exercised offline only |
+| Configured Hz, measured Hz, sim time, real-time factor separated | done; measured once (5 s smoke, 39.7 Hz) |
 | Provenance, counts/windows, missing-data status, no NaN in JSON | partial — scenario reports only |
 | Weather/SNR/μ proxies not described as physics | done |
 | Unwired fusion helper not described as runtime | done |
 | Test counts and coverage from real runs | done (210 / 409 / 306, 2026-09-25) |
 | README free of "any", "never creeps", "late not unsafe", hard deadline / zero overhead | done |
 | No Guardian / voice / firmware achievements invented | done — not addressed in this repository |
-| **Simulation verification** | **NOT_RUN** |
+| **Simulation verification** | **done 2026-09-27, one run per matrix**; curved-road MRM NOT_RUN |

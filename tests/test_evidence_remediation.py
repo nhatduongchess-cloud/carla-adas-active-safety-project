@@ -641,5 +641,26 @@ class ProvenanceTests(unittest.TestCase):
         self.assertIn("time-out", versions["unknown_reason"])
 
 
+
+class PublishedV2ReportTests(unittest.TestCase):
+    """The v2 live reports (2026-09-27) must re-derive to the verdict they
+    record. If the gate logic changes, this says which published number moved."""
+
+    EXPECTED = {"v2_catalog_3seed": "PASS", "v2_core_5weather": "FAIL",
+                "v2_core_smoke": "PASS", "v2_range_loss": "PASS"}
+
+    def test_recorded_verdicts_reproduce_from_the_rows(self):
+        import json
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1] / "docs" / "benchmarks"
+        for name, status in self.EXPECTED.items():
+            with self.subTest(report=name):
+                data = json.loads((root / f"{name}.json").read_text(encoding="utf-8"))
+                self.assertEqual(data["acceptance_gate"]["status"], status)
+                rebuilt = build_report(data["scenarios"], meta=data["run"])
+                self.assertEqual(rebuilt["acceptance_gate"]["status"], status)
+                self.assertEqual(rebuilt["suite"], data["suite"])
+
+
 if __name__ == "__main__":
     unittest.main()

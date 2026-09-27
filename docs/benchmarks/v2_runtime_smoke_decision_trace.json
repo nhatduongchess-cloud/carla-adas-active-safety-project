@@ -1,0 +1,13 @@
+{
+  "summary": {
+    "schema_version": 2,
+    "total_frames": 200,
+    "action_counts": {
+      "DRIVE": 200
+    },
+    "intervention_events_retained": 0,
+    "capacity": 512,
+    "context_errors": 0
+  },
+  "events": []
+}

@@ -573,8 +573,9 @@ document, two by an external review that checked its claims against the code, on
 group of six fail-open paths (G12) by a second review that arrived as a script of
 offline probes, and a second group (G13) by the written remediation brief that
 accompanied it — and they are kept in [Resolved](#resolved) below rather than
-deleted. G9 is partly fixed; G10 and G11 are open. None of the 2026-09-25 fixes has
-been run on the simulator yet.
+deleted. G9 is partly fixed; G8, G10 and G11 are open. The 2026-09-25 fixes had
+their first live run on 2026-09-27 (one run per matrix,
+[`benchmarks/README.md`](benchmarks/README.md#evidence-v2-run-2026-09-27--the-current-results)).
 
 **G5 — The README state diagram is incomplete.** It shows four states; the
 implementation also emits `BRAKE_HOLD` and `BRAKE_TO_STOP`
@@ -606,8 +607,15 @@ budget of 1.0 s. It brakes and never collides. This paragraph used to add that i
 "holds more than 3.1 m of clearance, so this is lateness rather than a safety
 failure". That figure matched nothing in the data, and every clearance recorded at
 the time was centre-to-centre (see G12, resolved); how close it actually comes is
-not yet measured. It is the sole reason the catalog scores 43/45 instead of 45/45
-and the weather matrix 28/30.
+not yet measured. It is the sole reason the catalog scored 43/45 instead of 45/45
+and the weather matrix 28/30 on 2026-09-19.
+
+*Update, 2026-09-27 (v2 run, reaction metric v2, surface clearance).* The same
+scenario reacted in 0.5 / 0.7 / 0.5 s in the three catalog seeds and 0.6–0.85 s in
+four weathers, but **1.225 s again in storm** — the single failure in the weather
+matrix (29/30), while the catalog passed 45/45. Surface-to-surface clearance to the
+pedestrian was 2.21–3.87 m. One run per case cannot tell a fix from run-to-run
+variation in CPU inference timing, so G8 stays open.
 
 Three things were established before writing this down. It is **not weather
 specific**: across seeds it straddles the threshold in clear weather too (0.30 s,
@@ -641,7 +649,10 @@ unchanged, so the published scenario results remain comparable.
 produces a **valid** empty corridor, which no rule at this layer can tell apart
 from a clear road. Candidate repairs (hold until the ego has travelled past the
 last-seen obstacle position, or until stopped) change live behaviour more deeply.
-*Not run:* the new rule has not been exercised on the simulator.
+*Seen live, 2026-09-27:* in the LiDAR+radar-loss run the ego spent 9.4% of the
+run in `BRAKE_HOLD_NO_DATA` instead of releasing, then entered MRM and
+`SAFE_STOP` ([`v2_range_loss.json`](benchmarks/v2_range_loss.json)). The
+blind-zone case has not been constructed in a scenario.
 
 **G10 — The MRM brakes in a straight line. Open, found by reading.**
 `ego_control.py` builds the MRM command as `VehicleControl(brake=…, hand_brake=…)`,
@@ -816,8 +827,8 @@ semantics, and the radar/health/async/lane contracts. This tier exists so that t
 safety logic is verifiable in CI, where no simulator can run.
 
 **Tier 2 — unit suite.** Of the 24 `test_*.py` modules under `tests/`, **18 run
-with no CARLA client, no torch and no weights — 306 tests** (of 409 in total on
-2026-09-25) — and they now run on
+with no CARLA client, no torch and no weights — 307 tests** (of 410 in total on
+2026-09-27) — and they now run on
 every push as the `offline-tests` CI job. The remaining six import the CARLA client
 and stay local. Splitting them was the point: "needs a simulator" had been assumed
 of the whole suite, and it was only ever true of a quarter of it.
@@ -840,7 +851,7 @@ suite is judged against a planned matrix with a nonzero exit code unless it pass
 
 **CI** (`.github/workflows/selftest.yml`) runs three jobs on every push and pull
 request to `main`: Ruff correctness lint, Mypy over the safety-evidence core, and
-the 210-check self-test, and the 306 offline unit tests.
+the 210-check self-test, and the 307 offline unit tests.
 
 ---
 

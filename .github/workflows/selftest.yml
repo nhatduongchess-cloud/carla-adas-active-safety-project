@@ -53,7 +53,7 @@ jobs:
         run: python selftest.py
 
   offline-tests:
-    name: Unit tests that run without CARLA (306 tests)
+    name: Unit tests that run without CARLA (307 tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

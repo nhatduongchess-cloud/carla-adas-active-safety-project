@@ -64,7 +64,7 @@ This is a **portfolio project**, scoped to demonstrate ADAS fundamentals honestl
 **Demonstrated / working:**
 - The full perception → fusion → safety → control loop in CARLA, driven by the custom planner/controller. Traffic Manager is an **opt-in** driving mode, not a fault handler: if the custom stack raises, the runtime latches `custom_fault_safe_stop`, brakes manually with hazards and explicitly does **not** hand the vehicle to autopilot (`modules/ego_control.py`).
 - Committed AEB/evasion arbiter, radar ground-plane rejection, sensor fusion + tracking, learned-lane/map arbiter, ODD/MRM layer, RL cruise under a safety cap.
-- 210 CARLA-free self-test checks and a 409-test unit suite (controller, safety, radar, junction, neural scheduling, dataset labels).
+- 210 CARLA-free self-test checks and a 410-test unit suite (controller, safety, radar, junction, neural scheduling, dataset labels).
 - A curated, seeded scenario harness for AEB/avoidance verification.
 
 **Evidence discipline.** What each claim rests on is recorded in
@@ -74,7 +74,8 @@ requirement status (implemented / unit-verified / simulation-observed /
 known-failing) is in [`docs/REQUIREMENT_MAP.md`](docs/REQUIREMENT_MAP.md). The
 2026-09-25 remediation and what it did not cover:
 [`docs/EVIDENCE_REMEDIATION_RESULTS.md`](docs/EVIDENCE_REMEDIATION_RESULTS.md). The
-code changes of that date have **not yet been run on the simulator**.
+code changes of that date were first run on the simulator on 2026-09-27 (one run
+per matrix; see [Results](#results)).
 
 **In progress / future work** (see [Roadmap](#roadmap--future-work)): custom 8-class detector accuracy, a full 20k-frame dataset, the complete scenario × weather × fault matrix and soak, and native-engine stability on this custom build (see [Known limitations](#known-limitations)).
 
@@ -154,10 +155,43 @@ and abort conditions: [`docs/ARCHITECTURE.md` §7.3](docs/ARCHITECTURE.md#73-the
 
 > **Reading these honestly.** Numbers below were measured on specific configurations and dates; each states its context. They are simulator results from a portfolio project, **not** certified ADAS metrics. Live runtime latency and full-capture stability on the current custom build are still being worked (see [Known limitations](#known-limitations)); results outside the current stable envelope are labelled as such.
 
-### Scenario harness — re-run on HEAD, 2026-09-19
+### Scenario harness — evidence v2 run, 2026-09-27 (current)
+
+The first live run of the 2026-09-25 code: commit `46bbaa4`, clean tree, CARLA
+`edf3e9f5c`, Town02, RTX 4070 Laptop, **CPU inference**, synchronous 0.025 s step
+— all recorded inside each report. Reaction delay is metric v2 and clearance is
+surface-to-surface. One run per matrix. Full reading:
+[`docs/benchmarks/README.md`](docs/benchmarks/README.md#evidence-v2-run-2026-09-27--the-current-results).
+
+| Check | Observed | Target | Result | Artifact |
+|---|---:|---:|:---:|---|
+| Full catalog, 15 scenarios × 3 seeds | **45/45** | ≥43/45 | ✅ | [`v2_catalog_3seed.json`](docs/benchmarks/v2_catalog_3seed.json) |
+| Core subset of that run | **18/18** | 18/18 | ✅ | same file |
+| **Acceptance gate** (core + catalog + no collision) | **PASS** | PASS | ✅ | same file, `acceptance_gate.status` |
+| Core × 5 weathers, seed 42 | **29/30** | 30/30 | ❌ | [`v2_core_5weather.json`](docs/benchmarks/v2_core_5weather.json) — `DynamicObjectCrossing` in storm, 1.225 s |
+| LiDAR + radar lost for 4 s (`HardBrake`) | **PASS** | PASS | ✅ | [`v2_range_loss.json`](docs/benchmarks/v2_range_loss.json) — brake held, then MRM → SAFE_STOP |
+| Collisions / frame errors / invalid cases, 78 scenario runs | **0 / 0 / 0** | 0 | ✅ | the three scenario files above plus [`v2_core_smoke.json`](docs/benchmarks/v2_core_smoke.json) |
+| Smallest surface-to-surface clearance | **0.88 m** | ≥ 0.25 m | ✅ | `NoSignalJunctionCrossing`, seed 2026 |
+| Perception p95 per case (CPU) | **47–122 ms** | ≤ 50 ms | ❌ | reported, not gated by the harness |
+| Measured control rate, runtime smoke (5 s, empty road) | **39.7 Hz** | ≥ 38 Hz | ✅ | [`v2_runtime_smoke_async.json`](docs/benchmarks/v2_runtime_smoke_async.json) — run still `FAIL` on three latency criteria |
+
+**Read the 45/45 carefully.** `DynamicObjectCrossing` reacted within budget in all
+three catalog seeds (0.5 / 0.7 / 0.5 s), but the same scenario took 1.225 s in the
+storm case of the weather matrix, and 0.30 / 1.225 / 1.10 s on 2026-09-19. With one
+run per case, a code effect cannot be separated from run-to-run variation in CPU
+inference timing, so the late reaction is **not** claimed fixed (G8). The 78
+scenario runs also overlap in recipes and seeds; "no collision recorded" describes
+these runs, not a guarantee.
+
+**The 39.7 Hz is a smoke measurement:** 200 control updates over 5.03 s wall on
+an empty road, headless, `low-memory` profile, with interval p99 51.5 ms. It is the
+first measured control rate in the project, and it is not a qualification of
+real-time operation.
+
+### Scenario harness — re-run on HEAD, 2026-09-19 (superseded)
 
 Against a live CARLA server (build `edf3e9f5c`, Town02, RTX 4070 Laptop) on the
-current code. Reports in [`docs/benchmarks/`](docs/benchmarks/).
+code before the 2026-09-25 changes. Kept for comparison; see the v2 run above.
 
 | Check | Observed | Target | Result | Artifact |
 |---|---:|---:|:---:|---|
@@ -175,7 +209,7 @@ The 90 runs overlap (the same recipes, seeds and weathers recur across files), s
 they are **not** 90 independent situations, and "0 collisions recorded" is an
 observation about those runs, not evidence that collisions cannot happen. These
 reports predate the 2026-09-25 code changes (reaction metric v2, surface
-clearance, evidence-based brake release); nothing has been re-run since.
+clearance, evidence-based brake release); the v2 run above is the re-run.
 
 The catalog sub-target is met; the acceptance gate as a whole is not, because it
 also requires every core case to pass and two do not. An earlier version of this
@@ -230,7 +264,7 @@ Kept for contrast. Measured 2026-09-01 on the radar-ground-filter build, with th
 
 ### CARLA-free self-test
 
-`selftest.py` → **210 checks / 0 failures**, run in CI on every push. Covers LiDAR→image projection, distance fusion, ego-motion tracking, TTC/safe-distance math, VRU/traffic semantics, planning/control, safety-FSM transitions, ODD/MRM, radar ground rejection/sign, and dataset gates. The unit-test suite adds **409 tests, all passing** (observed 2026-09-25 on the development machine, `python -m unittest discover -s tests -p "test_*.py"`). Of those, **306 need no CARLA client** and run in CI on every push; the other 103 are in six modules that import the CARLA client (no server needed) and stay local. Checks and tests are different kinds of count; they are not added together and are not a coverage figure.
+`selftest.py` → **210 checks / 0 failures**, run in CI on every push. Covers LiDAR→image projection, distance fusion, ego-motion tracking, TTC/safe-distance math, VRU/traffic semantics, planning/control, safety-FSM transitions, ODD/MRM, radar ground rejection/sign, and dataset gates. The unit-test suite adds **410 tests, all passing** (observed 2026-09-27 on the development machine, `python -m unittest discover -s tests -p "test_*.py"`). Of those, **307 need no CARLA client** and run in CI on every push; the other 103 are in six modules that import the CARLA client (no server needed) and stay local. Checks and tests are different kinds of count; they are not added together and are not a coverage figure.
 
 ### Live demo run — current stable envelope (2026-09-12)
 
@@ -260,7 +294,7 @@ field would be quoting half a report.
 Full artifact: [`docs/benchmarks/demo_clear.json`](docs/benchmarks/demo_clear.json),
 with a field-by-field reading in [`docs/benchmarks/README.md`](docs/benchmarks/README.md).
 
-**AEB and L3-MRM behaviour** are evidenced by the demo video clips plus the seeded scenario suite (`StationaryObjectCrossing`, `ConstructionObstacle`, `DynamicObjectCrossing`) and the `selftest.py` safety-FSM / ODD-MRM checks. A standalone live JSON report for those two clips was not reliably capturable: B01 is intermittent and can terminate a capture run before the report is written — itself a documented symptom of the limitation, not a gap in the behaviour.
+**AEB and L3-MRM behaviour** are evidenced by the v2 range-loss run above and by the demo video clips plus the seeded scenario suite (`StationaryObjectCrossing`, `ConstructionObstacle`, `DynamicObjectCrossing`) and the `selftest.py` safety-FSM / ODD-MRM checks. A standalone live JSON report for those two clips was not reliably capturable: B01 is intermittent and can terminate a capture run before the report is written — itself a documented symptom of the limitation, not a gap in the behaviour.
 
 ### Empty-road false-AEB defect — a real bug, root-caused and fixed
 
@@ -271,11 +305,11 @@ Hands-on testing exposed a false positive: with zero traffic, AEB latched to a s
 Honesty about limits is part of the engineering.
 
 - **Native engine crash (B01) on heavy capture.** On the local custom CARLA build (`edf3e9f5c`, UE4 4.26.2), the fuller capture stack can trigger an intermittent native `EXCEPTION_ACCESS_VIOLATION` in skeletal-mesh scene-proxy render dispatch (`FSkeletalMeshSceneProxy` / `MeshObject`) during camera scene-capture. It has been reproduced across D3D11 and D3D12, `-onethread`, and low-render configurations; the available minidumps lack the heap needed to prove the object-lifetime root cause, and no matching native source/build tree is available to repair it. **Consequence:** demos and captures are scoped to a stable envelope (Low quality, 640×360, bounded runs). A full write-up is in [`docs/B01_FAILURE_ANALYSIS.md`](docs/B01_FAILURE_ANALYSIS.md).
-- **An MRM brakes in a straight line, and an object inside the LiDAR near-field blind zone looks like a clear road.** Recorded as gaps G10 and G9 in [`docs/ARCHITECTURE.md` §12](docs/ARCHITECTURE.md#12-known-architectural-gaps). G9 is partly fixed (2026-09-25): missing LiDAR data no longer releases a latched brake, and holding no longer weakens it from 1.0 to 0.7; the blind-zone case remains. Neither change has been run on the simulator yet.
+- **An MRM brakes in a straight line, and an object inside the LiDAR near-field blind zone looks like a clear road.** Recorded as gaps G10 and G9 in [`docs/ARCHITECTURE.md` §12](docs/ARCHITECTURE.md#12-known-architectural-gaps). G9 is partly fixed (2026-09-25): missing LiDAR data no longer releases a latched brake, and holding no longer weakens it from 1.0 to 0.7 — seen live in the 2026-09-27 range-loss run (`BRAKE_HOLD_NO_DATA`, 9.4% of the run). The blind-zone case remains, and no curved-road MRM has been run.
 - **Takeover is simulated.** `--driver-takeover` is a flag; there is no manual input device and no verified human takeover. After the acknowledgement the configured controller keeps driving as a stand-in, and the AEB stays active.
-- **`DynamicObjectCrossing` misses the 1.0 s reaction budget about half the time.** Measured on HEAD 2026-09-19: it reacts in **1.225 s** (49 frames), brakes and never collides — but it is late against the stated budget. Its recorded clearance was centre-to-centre, so how close it actually came is not yet measured. It straddles the threshold across seeds in clear weather (0.30 / 1.225 / 1.10 s) and is deterministic at 1.225 s in heavy rain. It is **not** a recent regression: the same scenario on the pre-fix commit `47d9274` gives identical numbers. It is the reason the current catalog score is 43/45 rather than 45/45. For this recipe the hazard origin defaults to the trigger frame (walker spawned ≈20 m ahead, trigger at 22 m, 1.6 m/s), so the 1.225 s could come from the oracle definition, warm-up, actor placement, the controller or perception — the evidence does not yet single out one, and the measurement used reaction metric v1. Evidence: [`docs/benchmarks/head_doc_probe.json`](docs/benchmarks/head_doc_probe.json) and [`pre_f02_doc_heavyrain.json`](docs/benchmarks/pre_f02_doc_heavyrain.json). Not yet diagnosed.
+- **`DynamicObjectCrossing` reacts near, and sometimes over, the 1.0 s budget.** Across the 2026-09-27 runs it reacted in 0.5–0.85 s in eight of nine cases and **1.225 s** in the storm case, which fails the weather matrix (29/30). On 2026-09-19 it gave 0.30 / 1.225 / 1.10 s across seeds. It brakes and has never collided; the smallest surface-to-surface clearance to the pedestrian in the v2 runs was 2.21 m. For this recipe the hazard origin is the trigger frame (walker spawned ≈20 m ahead, trigger at 22 m, 1.6 m/s), and the recurring 1.225 s (49 frames) points at a fixed start-up cost, but the cause — oracle, warm-up, actor placement, controller or perception — is **not diagnosed**, and one run per case cannot separate a fix from run-to-run variation. Evidence: [`v2_core_5weather.json`](docs/benchmarks/v2_core_5weather.json), [`head_doc_probe.json`](docs/benchmarks/head_doc_probe.json), [`pre_f02_doc_heavyrain.json`](docs/benchmarks/pre_f02_doc_heavyrain.json).
 - **Detector accuracy is not qualified.** The demo uses pretrained COCO weights; a custom CARLA-domain 8-class detector is future work and does not yet meet an accuracy bar.
-- **Runtime latency / throughput targets are aspirational**, not certified: on CPU-inference debug profiles the 20 FPS object / p95 latency targets are not met. Reported latency numbers state their profile.
+- **Runtime latency targets are not met on CPU inference.** Perception p95 was 47–122 ms per case against 50 ms, and the 5 s runtime smoke still failed its safety-p99, perception-p95 and inference-age criteria even though the measured control rate was 39.7 Hz. No GPU-inference run has been published.
 - **Not a real-vehicle system.** This is a simulation study; it is not validated ADAS/L3 for a physical vehicle.
 
 ## Tech stack
@@ -380,7 +414,7 @@ python -m unittest tests.test_audit_training_dataset tests.test_carla_probe test
   tests.test_decision_trace tests.test_image_quality tests.test_inference_telemetry tests.test_launch_carla \
   tests.test_neural_decoupling tests.test_perception_contracts tests.test_pipeline_metrics tests.test_runtime_cleanup \
   tests.test_runtime_config tests.test_runtime_report tests.test_safety_geometry tests.test_sensor_sync tests.test_validate_dataset \
-  tests.test_evidence_review tests.test_evidence_remediation   # 306 tests
+  tests.test_evidence_review tests.test_evidence_remediation   # 307 tests
 ruff check .
 mypy
 ```
@@ -396,7 +430,7 @@ python -m unittest tests.test_capture_lifecycle tests.test_dataset_capture tests
 ```
 
 GitHub Actions runs four gates on every push: ruff, mypy, `selftest.py`, and the
-306-test offline group. The six CARLA-client modules stay local by necessity.
+307-test offline group. The six CARLA-client modules stay local by necessity.
 
 ## Engineering notes & design decisions
 

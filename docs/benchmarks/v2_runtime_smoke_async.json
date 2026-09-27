@@ -1,0 +1,552 @@
+{
+  "title": "CARLA finite runtime / soak report",
+  "status": "FAIL",
+  "stop_reason": "duration_reached",
+  "error": null,
+  "cleanup": {
+    "verified": true,
+    "primary_error": null,
+    "steps": {
+      "neural.stop_measurement": {
+        "status": "PASS"
+      },
+      "neural.close": {
+        "status": "PASS"
+      },
+      "neural.verify": {
+        "status": "PASS"
+      },
+      "server.probe": {
+        "status": "PASS"
+      },
+      "sensor.stop.136": {
+        "status": "PASS"
+      },
+      "sensor.stop.137": {
+        "status": "PASS"
+      },
+      "sensor.stop.138": {
+        "status": "PASS"
+      },
+      "sensor.stop.139": {
+        "status": "PASS"
+      },
+      "actor.destroy.135": {
+        "status": "PASS"
+      },
+      "actor.destroy.139": {
+        "status": "PASS"
+      },
+      "actor.destroy.138": {
+        "status": "PASS"
+      },
+      "actor.destroy.137": {
+        "status": "PASS"
+      },
+      "actor.destroy.136": {
+        "status": "PASS"
+      },
+      "tm.restore": {
+        "status": "PASS"
+      },
+      "world.verify": {
+        "status": "PASS"
+      },
+      "journal.exit": {
+        "status": "PASS"
+      },
+      "telemetry.close": {
+        "status": "PASS"
+      },
+      "journal.close": {
+        "status": "PASS"
+      },
+      "display.close": {
+        "status": "PASS"
+      }
+    },
+    "elapsed_s": 0.04699999999957072,
+    "budget_s": 20.0,
+    "budget_kind": "cooperative; external native supervisor required"
+  },
+  "run": {
+    "town": "Carla/Maps/Town02",
+    "weather": "clear",
+    "seed": 42,
+    "vehicles_requested": 0,
+    "vehicles_spawned": 0,
+    "target_duration_s": 5.0,
+    "frames_x_configured_step_s": 5.0,
+    "wall_since_loop_start_incl_teardown_s": 5.087,
+    "frames": 200,
+    "hud_fps_ema": 41.781,
+    "configured_fps": 40,
+    "control_timing": {
+      "status": "MEASURED",
+      "clock": "time.perf_counter for wall; sensor simulation timestamps for sim",
+      "window": "first control cycle window start to loop exit; excludes start-up and teardown",
+      "target_hz": 40,
+      "configured_step_s": 0.025,
+      "unique_control_updates": 200,
+      "duplicate_frames_skipped": 0,
+      "active_control_wall_s": 5.031735,
+      "delivered_control_hz": 39.748,
+      "simulated_elapsed_s": 5.027247,
+      "real_time_factor": 0.9991,
+      "sim_time_regressions": 0,
+      "control_interval_ms": {
+        "count": 199,
+        "dropped": 0,
+        "p50": 24.806,
+        "p95": 30.849,
+        "p99": 51.539,
+        "max": 83.106
+      },
+      "deadline_definition": "interval > 2 target periods",
+      "deadline_misses": 3
+    },
+    "sim_clock": {
+      "configured_step_s": 0.025,
+      "max_gap_s": 0.25,
+      "max_dt_s": 0.07854,
+      "counts": {
+        "first": 1,
+        "ok": 199,
+        "gap": 0,
+        "invalid": 0
+      }
+    },
+    "headless": true,
+    "performance_profile": {
+      "name": "low-memory",
+      "camera": [
+        640,
+        360,
+        90.0
+      ],
+      "yolo_imgsz": 320,
+      "detect_hz": 10.0,
+      "safety_control_hz": 40,
+      "lidar_points_per_second": 40000,
+      "lidar_max_points": 1200,
+      "dashboard_hz": 10.0,
+      "runtime_mode": "async-stable",
+      "camera_sensor_hz": 10.0,
+      "camera_postprocess": false,
+      "lidar_sensor_hz": 40.0,
+      "radar_sensor_tick_s": 0.0,
+      "radar_cadence": "every_world_tick",
+      "radar_sensor_hz": null,
+      "learned_lane_hz": 10.0,
+      "inference_device": "cpu",
+      "inference_device_requested": "cpu",
+      "inference_device_reason": "explicit selection"
+    }
+  },
+  "driving": {
+    "collisions": 0,
+    "collision_history": [],
+    "max_speed_kmh": 34.457,
+    "distance_travelled_m": 34.126,
+    "start_location": [
+      -7.529999732971191,
+      142.19000244140625,
+      0.27719131112098694
+    ],
+    "end_location": [
+      -7.456725120544434,
+      176.20860290527344,
+      0.22188404202461243
+    ]
+  },
+  "safety": {
+    "aeb_triggered": false,
+    "sensor_loss_fallback": null,
+    "l3": {
+      "final_state": "L3_ACTIVE",
+      "tor_events": 0,
+      "takeover_events": 0,
+      "mrm_events": 0,
+      "takeover_input": "none",
+      "human_takeover_verified": false
+    },
+    "decision_trace": {
+      "schema_version": 2,
+      "total_frames": 200,
+      "action_counts": {
+        "DRIVE": 200
+      },
+      "intervention_events_retained": 0,
+      "capacity": 512,
+      "context_errors": 0
+    },
+    "decision_trace_path": "C:\\Users\\Admin\\OneDrive\\Desktop\\Carla Simulator\\Self-Driving-Perception\\logs\\evidence_v2\\decision_trace.json"
+  },
+  "sensors": {
+    "camera_lidar_frame_errors": 0,
+    "radar_frame_errors": 0,
+    "sync": {
+      "reads": 252,
+      "wait_p50_ms": 19.44,
+      "wait_p95_ms": 26.05,
+      "wait_p99_ms": 30.29,
+      "stale_discarded": 4,
+      "frame_errors": 0,
+      "pairing_samples": 200,
+      "pairing_skew_max_frames": 21,
+      "pairing_skew_p95_frames": 19
+    },
+    "health": {
+      "frames": 200,
+      "enabled": {
+        "camera": true,
+        "lidar": true,
+        "radar": true
+      },
+      "availability": {
+        "camera": 1.0,
+        "lidar": 1.0,
+        "radar": 1.0
+      },
+      "range_sensors_enabled": [
+        "lidar",
+        "radar"
+      ],
+      "consecutive_misses": {
+        "camera": 0,
+        "lidar": 0,
+        "radar": 0
+      },
+      "missing_counts": {
+        "camera": 0,
+        "lidar": 0,
+        "radar": 0
+      },
+      "range_redundancy_lost": false,
+      "all_enabled_range_unavailable": false,
+      "range_redundancy_degraded": false,
+      "max_range_misses_frames": 3,
+      "range_redundancy_ever_lost": false,
+      "range_redundancy_loss_events": 0
+    }
+  },
+  "pipeline": {
+    "stages": {
+      "safety_control": {
+        "samples": 200,
+        "total_samples": 200,
+        "invalid_samples": 0,
+        "p50_ms": 23.479,
+        "p95_ms": 30.002,
+        "p99_ms": 33.767,
+        "deadline_ms": 25.0,
+        "deadline_misses": 79,
+        "window_deadline_misses": 79,
+        "deadline_miss_fraction": 0.395,
+        "window_deadline_miss_fraction": 0.395
+      },
+      "lidar_fusion": {
+        "samples": 49,
+        "total_samples": 49,
+        "invalid_samples": 0,
+        "p50_ms": 0.593,
+        "p95_ms": 2.504,
+        "p99_ms": 3.001,
+        "deadline_ms": null,
+        "deadline_misses": 0,
+        "window_deadline_misses": 0,
+        "deadline_miss_fraction": null,
+        "window_deadline_miss_fraction": null
+      },
+      "neural_inference": {
+        "samples": 49,
+        "total_samples": 49,
+        "invalid_samples": 0,
+        "p50_ms": 61.486,
+        "p95_ms": 69.206,
+        "p99_ms": 120.949,
+        "deadline_ms": 50.0,
+        "deadline_misses": 35,
+        "window_deadline_misses": 35,
+        "deadline_miss_fraction": 0.7142857142857143,
+        "window_deadline_miss_fraction": 0.7142857142857143
+      },
+      "object_detection": {
+        "samples": 49,
+        "total_samples": 49,
+        "invalid_samples": 0,
+        "p50_ms": 61.3,
+        "p95_ms": 69.073,
+        "p99_ms": 120.828,
+        "deadline_ms": null,
+        "deadline_misses": 0,
+        "window_deadline_misses": 0,
+        "deadline_miss_fraction": null,
+        "window_deadline_miss_fraction": null
+      }
+    },
+    "inference_age_p95_ms": 157.0,
+    "inference_age_total_samples": 193,
+    "inference_age_window_samples": 193,
+    "inference_age_invalid_samples": 7,
+    "gpu_peak_mb": 0.0,
+    "gpu_device_peak_used_mb": 1133.5,
+    "gpu_device_total_mb": 8187.5,
+    "gpu_tensor_samples": 200,
+    "gpu_device_samples": 200,
+    "gpu_sampling_errors": 0,
+    "gpu_last_error": null,
+    "gpu_memory_units": "MiB; device-wide sampled maximum is not an absolute peak",
+    "inference_scheduler": {
+      "submitted": 50,
+      "completed": 50,
+      "failed": 0,
+      "replaced": 0,
+      "pending": false,
+      "running": false,
+      "skipped_busy": 0,
+      "skipped_closed": 0,
+      "thread_alive": false,
+      "telemetry": {
+        "schema_version": 1,
+        "scope": "runtime_loop",
+        "duration_s": 5.030999999999949,
+        "sample_capacity": 256,
+        "finished_requests": 49,
+        "unique_completed_frames": 49,
+        "nonincreasing_completed_frames": 0,
+        "unique_consumed_frames": 49,
+        "overwritten_before_poll": 0,
+        "first_poll_outcomes": {
+          "eligible": 49
+        },
+        "unpolled_latest": 0,
+        "completed_output_fps": 9.73961439077728,
+        "consumed_output_fps": 9.73961439077728,
+        "stages": {
+          "submission_to_completion": {
+            "samples": 49,
+            "total_samples": 49,
+            "invalid_samples": 0,
+            "p50_ms": 62.0,
+            "p95_ms": 78.0,
+            "p99_ms": 125.0,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "object_detection": {
+            "samples": 49,
+            "total_samples": 49,
+            "invalid_samples": 0,
+            "p50_ms": 61.3,
+            "p95_ms": 69.073,
+            "p99_ms": 120.828,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "consumed_age": {
+            "samples": 49,
+            "total_samples": 49,
+            "invalid_samples": 0,
+            "p50_ms": 94.0,
+            "p95_ms": 125.0,
+            "p99_ms": 141.0,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "neural_inference": {
+            "samples": 49,
+            "total_samples": 49,
+            "invalid_samples": 0,
+            "p50_ms": 61.486,
+            "p95_ms": 69.206,
+            "p99_ms": 120.949,
+            "deadline_ms": 50.0,
+            "deadline_misses": 35,
+            "window_deadline_misses": 35,
+            "deadline_miss_fraction": 0.7142857142857143,
+            "window_deadline_miss_fraction": 0.7142857142857143
+          },
+          "lidar_fusion": {
+            "samples": 49,
+            "total_samples": 49,
+            "invalid_samples": 0,
+            "p50_ms": 0.593,
+            "p95_ms": 2.504,
+            "p99_ms": 3.001,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          },
+          "queue_wait": {
+            "samples": 49,
+            "total_samples": 49,
+            "invalid_samples": 0,
+            "p50_ms": 0.0,
+            "p95_ms": 0.0,
+            "p99_ms": 16.0,
+            "deadline_ms": null,
+            "deadline_misses": 0,
+            "window_deadline_misses": 0,
+            "deadline_miss_fraction": null,
+            "window_deadline_miss_fraction": null
+          }
+        },
+        "window_closed": true,
+        "finished_after_window": 1
+      },
+      "lane": {
+        "submitted": 27,
+        "completed": 27,
+        "failed": 0,
+        "replaced": 0,
+        "pending": false,
+        "running": false,
+        "skipped_busy": 23,
+        "skipped_closed": 0,
+        "thread_alive": false,
+        "telemetry": {
+          "schema_version": 1,
+          "scope": "runtime_loop",
+          "duration_s": 5.030999999999949,
+          "sample_capacity": 256,
+          "finished_requests": 27,
+          "unique_completed_frames": 27,
+          "nonincreasing_completed_frames": 0,
+          "unique_consumed_frames": 12,
+          "overwritten_before_poll": 0,
+          "first_poll_outcomes": {
+            "stale": 15,
+            "eligible": 12
+          },
+          "unpolled_latest": 0,
+          "completed_output_fps": 5.36672629695891,
+          "consumed_output_fps": 2.3852116875372933,
+          "stages": {
+            "submission_to_completion": {
+              "samples": 27,
+              "total_samples": 27,
+              "invalid_samples": 0,
+              "p50_ms": 110.0,
+              "p95_ms": 125.0,
+              "p99_ms": 187.0,
+              "deadline_ms": null,
+              "deadline_misses": 0,
+              "window_deadline_misses": 0,
+              "deadline_miss_fraction": null,
+              "window_deadline_miss_fraction": null
+            },
+            "consumed_age": {
+              "samples": 12,
+              "total_samples": 12,
+              "invalid_samples": 0,
+              "p50_ms": 140.0,
+              "p95_ms": 141.0,
+              "p99_ms": 141.0,
+              "deadline_ms": null,
+              "deadline_misses": 0,
+              "window_deadline_misses": 0,
+              "deadline_miss_fraction": null,
+              "window_deadline_miss_fraction": null
+            },
+            "learned_lane": {
+              "samples": 27,
+              "total_samples": 27,
+              "invalid_samples": 0,
+              "p50_ms": 115.8,
+              "p95_ms": 120.062,
+              "p99_ms": 187.271,
+              "deadline_ms": null,
+              "deadline_misses": 0,
+              "window_deadline_misses": 0,
+              "deadline_miss_fraction": null,
+              "window_deadline_miss_fraction": null
+            },
+            "neural_inference": {
+              "samples": 27,
+              "total_samples": 27,
+              "invalid_samples": 0,
+              "p50_ms": 115.803,
+              "p95_ms": 120.066,
+              "p99_ms": 187.281,
+              "deadline_ms": 50.0,
+              "deadline_misses": 27,
+              "window_deadline_misses": 27,
+              "deadline_miss_fraction": 1.0,
+              "window_deadline_miss_fraction": 1.0
+            },
+            "queue_wait": {
+              "samples": 27,
+              "total_samples": 27,
+              "invalid_samples": 0,
+              "p50_ms": 0.0,
+              "p95_ms": 0.0,
+              "p99_ms": 0.0,
+              "deadline_ms": null,
+              "deadline_misses": 0,
+              "window_deadline_misses": 0,
+              "deadline_miss_fraction": null,
+              "window_deadline_miss_fraction": null
+            }
+          },
+          "window_closed": true,
+          "finished_after_window": 0
+        }
+      }
+    },
+    "measurement_semantics": {
+      "stages": "Control-loop stages; neural stages here cover unique consumed products only (legacy acceptance).",
+      "inference_scheduler.telemetry": "All finished requests in the explicit runtime window, including stale/errors/unpolled; shutdown completions counted separately.",
+      "inference_scheduler.lane": "Independent lane frames/timing with the same age guard; idle-only admission skips busy requests without a lane backlog. Null means no lane backend. Object neural_inference latency no longer includes waiting for lane.",
+      "first_poll_outcomes": "One outcome per completed request's first poll, not per loop. A future-frame result may be consumed later; eligible is not a consumption acknowledgement.",
+      "unique_frames": "Strictly increasing frame high-water marks per scheduler/episode; duplicate/out-of-order completions flagged, never counted as new FPS.",
+      "latency": "Monotonic queue/submission timing; worker service excludes queue. Submission excludes upstream camera transport/copy; not full sensor-to-control latency.",
+      "stage_samples": "samples/percentiles/window_deadline_misses describe retained window; total_samples/deadline_misses are lifetime valid counts. Invalid samples excluded and counted.",
+      "inference_age_p95_ms": "Legacy age of last consumed object product sampled per loop, including stale periods after semantics are cleared."
+    }
+  },
+  "learned_lane": {
+    "enabled": true,
+    "ready": true,
+    "backend_error": null,
+    "model_sha256": "490d8f81995cf6382005e037ca70b5260de6cff7da863c0965b2daeb3f710a4c",
+    "input_size": [
+      800,
+      320
+    ],
+    "cadence_hz": 10.0,
+    "source_frames": {
+      "learned": 0,
+      "map": 200
+    }
+  },
+  "criteria": {
+    "completed_duration": true,
+    "no_runtime_error": true,
+    "cleanup_verified": true,
+    "collisions_zero": true,
+    "sensor_frame_errors_zero": true,
+    "radar_availability_ge_99_5pct": true,
+    "delivered_control_hz_ge_95pct_target": true,
+    "safety_p99_le_25ms": false,
+    "perception_p95_le_50ms": false,
+    "inference_age_p95_le_150ms": false,
+    "neural_inference_errors_zero": true,
+    "neural_workers_stopped": true,
+    "torch_gpu_peak_le_limit": true,
+    "device_gpu_peak_le_limit": true
+  },
+  "criteria_not_applicable": [],
+  "telemetry_csv": "telemetry_log_20260927_221502.csv"
+}

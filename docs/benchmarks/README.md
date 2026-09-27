@@ -5,7 +5,73 @@ They were previously only in `logs/`, which is git-ignored, so the figures could
 not be checked by anyone reading the repository. They are published here
 unmodified — same bytes the harness wrote.
 
-## Run on HEAD, 2026-09-19
+## Evidence v2 run, 2026-09-27 — the current results
+
+The first live run of the 2026-09-25 remediation code, commit
+[`46bbaa4`](https://github.com/nhatduongchess-cloud/carla-adas-active-safety-project/commit/46bbaa48991ae607453444f30337fa247338c87c)
+with `git_dirty: false`, recorded inside each file (`run.provenance`). CARLA client
+and server `edf3e9f5c`, Town02, Windows 11, RTX 4070 Laptop, **CPU inference**,
+synchronous mode at a fixed 0.025 s step (read back from the world after it was
+applied). Reaction delay is metric **v2**, and clearance is **surface-to-surface**
+(`clearance_basis: oriented_boxes` in every case). One run of each matrix.
+
+| Artifact | Suite | Cases | Result |
+|---|---|---:|---|
+| [`v2_catalog_3seed.json`](v2_catalog_3seed.json) | 15 scenarios × 3 seeds, clear | 45 | **45 PASS / 0 FAIL** — gate `core_plus_catalog` **PASS** (core 18/18, catalog 45/45) |
+| [`v2_core_5weather.json`](v2_core_5weather.json) | 6 core × 5 weathers, seed 42 | 30 | **29 PASS / 1 FAIL** — gate `all_planned_cases` **FAIL**: `DynamicObjectCrossing` in `storm` reacted in 1.225 s |
+| [`v2_core_smoke.json`](v2_core_smoke.json) | `HardBrake`, `DynamicObjectCrossing` | 2 | 2 PASS |
+| [`v2_range_loss.json`](v2_range_loss.json) | `HardBrake` with LiDAR **and** radar lost for 4 s | 1 | PASS — ODD VIOLATION → MRM → SAFE_STOP with hand brake |
+| [`v2_runtime_smoke_async.json`](v2_runtime_smoke_async.json) | `chinh.py` runtime, 5 s, async-stable, 0 NPCs | — | `status: FAIL` on three latency criteria; see below |
+
+**What held across all 78 scenario cases.** No collision recorded; zero
+camera–LiDAR frame errors; zero scenario execution errors; every case's cleanup
+verified; no case INVALID or ERROR. The smallest surface-to-surface clearance
+was **0.88 m** (`NoSignalJunctionCrossing`, seed 2026) against a 0.25 m
+criterion — the first run in which that criterion could actually fail. Five
+catalog cases and one weather case were flagged `preemptive_response` (the ego was
+already braking when the hazard was declared).
+
+**`DynamicObjectCrossing` is still marginal, and its timing varies between runs.**
+Today it reacted in 0.5 / 0.7 / 0.5 s in the three catalog seeds, 0.6 s in the
+smoke run, and 0.7 / 0.85 / 0.75 / 0.6 / **1.225 s** across the five weathers. On
+2026-09-19 the same seeds gave 0.30 / 1.225 / 1.10 s. The 45/45 therefore does
+**not** mean the late reaction is fixed: one run per case cannot separate a code
+effect from run-to-run variation in CPU inference timing, and the storm case still
+fails at exactly the old 1.225 s. The cause remains undiagnosed (G8).
+
+**The new brake-release rule, first seen live.** In `v2_range_loss.json` the ego
+spent 9.4% of the run in `BRAKE_HOLD_NO_DATA` — the latched brake held while the
+LiDAR data was missing, instead of releasing — then the ODD monitor declared a
+VIOLATION (range loss event count 1), the MRM ran and ended in `SAFE_STOP` with
+brake 1.0 and hand brake. The control status records the MRM's 1.0 winning over
+the AEB's 0.7 hold request.
+
+**Comfort numbers show why the magnitude filter is not an impact detector.**
+Every braking case has samples above the 12 m/s² cap (raw maximum 27.1 m/s²,
+282 samples in the catalog) while the collision sensor recorded no contact at
+all. The old field name `impact_decel_spikes` would have called these impacts.
+
+**Latency on CPU inference misses its targets.** Per-case perception p95 ranged
+47–122 ms against a 50 ms target. The safety loop p99 stayed under 25 ms in every
+catalog case (worst 19.6 ms) but reached 33.9 ms in one weather case; overall
+89 of 60,000 safety-loop samples missed the 25 ms deadline. The scenario harness
+does not gate on these; they are reported, not passed.
+
+**Runtime smoke (`chinh.py`, 5 s).** The measured control window delivered
+**39.7 Hz** (200 unique control updates in 5.03 s wall, simulated 5.03 s,
+real-time factor 0.999), control-interval p50 24.8 ms, p99 51.5 ms, max 83.1 ms,
+3 deadline misses (interval > 50 ms). This is the first measured control rate
+in the project, and it is five seconds on an empty road with 0 NPCs, headless,
+`low-memory` profile — a smoke test, not a qualification. The run is still
+`FAIL`: safety-control p99 33.8 ms > 25 ms, neural inference p95 69 ms > 50 ms,
+inference age p95 157 ms > 150 ms. Cleanup verified; no collision; AEB never
+triggered (`decision_trace`: 200 × DRIVE).
+
+**Not in these files:** GPU inference, other towns, more than one run per case,
+a soak, a curved-road MRM, the near-field blind-zone case (G9), or anything on a
+real vehicle.
+
+## Run on HEAD, 2026-09-19 (superseded by the v2 run above)
 
 Re-run against a live CARLA server (build `edf3e9f5c`, client `edf3e9f5c`,
 Town02, RTX 4070 Laptop) on the current code, after the F01–F12 review fixes.
@@ -238,10 +304,12 @@ Needs a CARLA server. Check `--help` on HEAD first; the harness has gained
 options since these files were written.
 
 ```bash
-python run_scenarios.py --town Town02 --scenarios all  --seeds 42,1337,2026 --weather clear --report logs/catalog_clear_3seed.json
-python run_scenarios.py --town Town02 --scenarios core --seeds 42,1337,2026 --weather clear --report logs/core_clear_3seed.json
-python run_scenarios.py --town Town02 --scenarios core --seed 42 --weathers clear,light_rain,heavy_rain,fog,storm --report logs/core_5weather.json
+python run_scenarios.py --town Town02 --scenarios all  --seeds 42,1337,2026 --weather clear --seconds 20 --inference-device cpu --report logs/evidence_v2/catalog_3seed.json
+python run_scenarios.py --town Town02 --scenarios core --seed 42 --weathers clear,light_rain,heavy_rain,fog,storm --seconds 20 --inference-device cpu --report logs/evidence_v2/core_5weather.json
+python run_scenarios.py --town Town02 --scenarios HardBrake --seed 42 --weather clear --seconds 20 --fault lidar-radar-loss --fault-start 5 --fault-duration 4 --inference-device cpu --report logs/evidence_v2/range_loss.json
+python chinh.py --town Town02 --vehicles 0 --seed 42 --duration 5 --no-display --performance-profile low-memory --runtime-mode async-stable --inference-device cpu --run-report logs/evidence_v2/smoke_async.json
 ```
 
-Read the JSON verdicts rather than the exit code, and distinguish a scenario that
-failed from a run that never completed because the process crashed.
+Since 2026-09-25 the exit code follows the gate (0 PASS, 1 FAIL, 2 INVALID, 3
+NOT_EVALUATED). Still read the JSON: `suite.not_run` and `run.partial` show a run
+that never completed because the process crashed.
