@@ -125,10 +125,32 @@ All three pass with the same numbers (reaction at frame 5 via radar, 0.0 s delay
 window starts at 5 s. They show that losing one sensor while stopped **does not
 release the latched brake and does not raise an ODD violation or an MRM** (range
 redundancy kept, as `fault_acceptance` requires). They do **not** show detection
-with a sensor missing. That needs the fault active before the hazard
-(`--fault-start 0 --fault-duration 20`), not yet run. In the radar-loss run the
+with a sensor missing; the next three runs do. In the radar-loss run the
 arbiter spent 0.2% of frames in `NORMAL` and 0.2% in `BRAKE_TO_STOP` (about two
 frames each); not investigated.
+
+### Single-sensor loss from the start (commit `adec9c4`)
+
+The same `HardBrake` case with the sensor absent for the whole 20 s
+(`--fault-start 0 --fault-duration 20`), so the hazard has to be detected
+without it. Commit `adec9c4` (clean) differs from `b3bba41` only in docs,
+reports and a test.
+
+| Sensor lost for the whole run | Brake decided by | Reaction | Surface clearance | Min TTC | ODD | Result | Report |
+|---|---|---|---:|---:|---|---|---|
+| LiDAR | radar | 0.0 s (frame 5) | 5.78 m | 1.33 s | NORMAL, `range_redundancy_degraded` | PASS | [`v2_fault_lidar_loss_from_start.json`](v2_fault_lidar_loss_from_start.json) |
+| radar | LiDAR | **0.15 s** (frame 11, 9.2 m) | **3.04 m** | 0.13 s | NORMAL, `range_redundancy_degraded` | PASS | [`v2_fault_radar_loss_from_start.json`](v2_fault_radar_loss_from_start.json) |
+| camera | radar | 0.0 s (frame 5) | 5.77 m | 0.52 s | NORMAL | PASS | [`v2_fault_camera_loss_from_start.json`](v2_fault_camera_loss_from_start.json) |
+
+Either range sensor on its own detected the braking lead vehicle in this
+scenario. Without the radar, the LiDAR path reacted six frames later and the car
+stopped 2.7 m closer (3.04 m against 5.78 m with the radar), with a minimum TTC of
+0.13 s. Without the camera nothing changed, because the radar decides this case
+anyway. In all three the ODD stayed `NORMAL` for the entire run: one healthy
+range sensor counts as within the ODD by design (R6a), and the health record only
+flags `range_redundancy_degraded`. So a sustained single-sensor loss raises no
+takeover request; that is a design choice to review, not something these runs
+validate. One scenario, one seed, clear weather.
 
 ### Soak attempt: stopped at 51 s
 

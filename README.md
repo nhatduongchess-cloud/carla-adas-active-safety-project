@@ -173,8 +173,8 @@ and a soak attempt. Full reading:
 | Core × 5 weathers, seed 42 | **29/30** | 30/30 | ❌ | [`v2_core_5weather.json`](docs/benchmarks/v2_core_5weather.json) — `DynamicObjectCrossing` in storm, 1.225 s |
 | `DynamicObjectCrossing` × 10 seeds, clear · storm | **8/10 · 7/10** | 10/10 | ❌ | [`v2_doc_clear_10seed.json`](docs/benchmarks/v2_doc_clear_10seed.json), [`v2_doc_storm_10seed.json`](docs/benchmarks/v2_doc_storm_10seed.json) — every late run 1.225 s, via radar |
 | LiDAR + radar lost for 4 s (`HardBrake`) | **PASS** | PASS | ✅ | [`v2_range_loss.json`](docs/benchmarks/v2_range_loss.json) — brake held, then MRM → SAFE_STOP |
-| One sensor lost for 4 s — LiDAR, radar, camera (`HardBrake`) | **3 PASS** | PASS | ✅ | [`v2_fault_*.json`](docs/benchmarks/README.md#single-sensor-loss-what-these-three-runs-do-and-do-not-show) — fault starts after the brake: shows the hold survives, not detection without the sensor |
-| Collisions / frame errors / invalid cases, 101 scenario runs | **0 / 0 / 0** | 0 | ✅ | all `v2_*` scenario files |
+| One sensor lost — LiDAR, radar, camera (`HardBrake`) | **3 + 3 PASS** | PASS | ✅ | [`v2_fault_*.json`](docs/benchmarks/README.md#single-sensor-loss-from-the-start-commit-adec9c4) — lost after the brake, and for the whole run: either range sensor alone detected the braking car; without radar the reaction came 0.15 s later and clearance fell from 5.78 m to 3.04 m |
+| Collisions / frame errors / invalid cases, 104 scenario runs | **0 / 0 / 0** | 0 | ✅ | all `v2_*` scenario files |
 | Smallest surface-to-surface clearance | **0.88 m** | ≥ 0.25 m | ✅ | `NoSignalJunctionCrossing`, seed 2026 |
 | Perception p95 per case (CPU) | **47–122 ms** | ≤ 50 ms | ❌ | reported, not gated by the harness |
 | Measured control rate, runtime smoke (5 s, empty road) | **39.7 Hz** | ≥ 38 Hz | ✅ | [`v2_runtime_smoke_async.json`](docs/benchmarks/v2_runtime_smoke_async.json) — run still `FAIL` on three latency criteria |
@@ -189,7 +189,7 @@ repeats then gave 8/10 in clear and 7/10 in storm: across all 29 runs on the v2
 code, the 23 on-time reactions (0.5–0.95 s) came from the camera tracker and the
 6 late ones were all exactly 1.225 s, from the radar. A late run is one where the camera
 tracker did not trigger the brake first and the geometric path caught the
-pedestrian at a fixed point; why the tracker did not is not yet diagnosed. The 101 scenario runs also
+pedestrian at a fixed point; why the tracker did not is not yet diagnosed. The 104 scenario runs also
 overlap in recipes and seeds; "no collision recorded" describes these runs, not
 a guarantee.
 

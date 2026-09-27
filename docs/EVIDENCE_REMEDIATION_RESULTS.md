@@ -225,6 +225,7 @@ case. One run per case: run-to-run variation is not measured, which matters for
 | `DynamicObjectCrossing` × 10 seeds, clear | `v2_doc_clear_10seed.json` | 8/10 — late runs 1.225 s, via radar |
 | `DynamicObjectCrossing` × 10 seeds, storm | `v2_doc_storm_10seed.json` | 7/10 — late runs 1.225 s, via radar |
 | One sensor lost (LiDAR / radar / camera), `HardBrake` | `v2_fault_*_loss.json` | 3 PASS; hold kept, ODD NORMAL, no MRM; fault starts after the hazard |
+| One sensor lost for the whole run, `HardBrake` (`adec9c4`) | `v2_fault_*_loss_from_start.json` | 3 PASS; LiDAR-only reacted 0.15 s later with 3.04 m clearance (5.78 m with radar); ODD NORMAL throughout |
 | LiDAR read timeout in `chinh.py` (R9c) | `v2_soak_5min_20veh.json` | observed live: loss recorded, safe-stop command sent |
 | Soak, 300 s, 20 NPC vehicles | `v2_soak_5min_20veh.json` | `FAIL` — stopped at 51 s; cleanup not verified (server unresponsive); 38.5 Hz until then |
 
@@ -271,7 +272,7 @@ matrix; no repeat runs, no GPU inference, no other town, no soak.
 | Reaction metric versioned; decision vs applied vs motion separated | partial — versioned, decision only |
 | Actor-origin distance not called surface clearance | done |
 | Unique/complete matrix; empty/duplicate/partial suites never PASS | done |
-| Verdict/exit code after cleanup; partial reports kept | done; cleanup verified live in all 101 scenario cases; the runtime's failure path seen live in the soak (cleanup not verified → FAIL); the scenario runner's failure path is exercised offline only |
+| Verdict/exit code after cleanup; partial reports kept | done; cleanup verified live in all 104 scenario cases; the runtime's failure path seen live in the soak (cleanup not verified → FAIL); the scenario runner's failure path is exercised offline only |
 | Configured Hz, measured Hz, sim time, real-time factor separated | done; measured once (5 s smoke, 39.7 Hz) |
 | Provenance, counts/windows, missing-data status, no NaN in JSON | partial — scenario reports only |
 | Weather/SNR/μ proxies not described as physics | done |

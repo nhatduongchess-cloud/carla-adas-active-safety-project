@@ -650,7 +650,10 @@ class PublishedV2ReportTests(unittest.TestCase):
                 "v2_core_smoke": "PASS", "v2_range_loss": "PASS",
                 "v2_doc_clear_10seed": "FAIL", "v2_doc_storm_10seed": "FAIL",
                 "v2_fault_lidar_loss": "PASS", "v2_fault_radar_loss": "PASS",
-                "v2_fault_camera_loss": "PASS"}
+                "v2_fault_camera_loss": "PASS",
+                "v2_fault_lidar_loss_from_start": "PASS",
+                "v2_fault_radar_loss_from_start": "PASS",
+                "v2_fault_camera_loss_from_start": "PASS"}
 
     def test_recorded_verdicts_reproduce_from_the_rows(self):
         import json
