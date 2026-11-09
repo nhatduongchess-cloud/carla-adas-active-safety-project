@@ -5,6 +5,22 @@ They were previously only in `logs/`, which is git-ignored, so the figures could
 not be checked by anyone reading the repository. They are published here
 unmodified — same bytes the harness wrote.
 
+## Core-suite rerun, 2026-11-09
+
+[Full JSON report](core_town02_seed42_20261109.json) for clean source commit
+`fa83772`. CARLA client/server `edf3e9f5c`, Town02, clear weather, seed 42,
+20 simulation seconds per case, synchronous 0.025 s steps, YOLOv8n on CPU,
+no injected faults. The public report replaces local executable and model
+paths with basenames. The model checksum and all measured results are preserved.
+
+**6/6 PASS**, no collision events or sensor frame errors, cleanup verified in
+every case, and world settings restored. The longest reaction delay was 0.60 s
+(`DynamicObjectCrossing`). The smallest measured footprint clearance was
+3.45 m (`ConstructionObstacle`). The construction and left cut-in cases both
+used AEB. No case activated a lane change, so this run provides evidence for
+braking under this configuration. The earlier multi-seed and weather reports
+below cover a broader test matrix.
+
 ## Evidence v2 run, 2026-09-27 — the current results
 
 The first live run of the 2026-09-25 remediation code, commit
