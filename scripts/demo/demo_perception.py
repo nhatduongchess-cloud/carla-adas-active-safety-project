@@ -6,6 +6,7 @@ import queue
 import time
 import csv
 import math
+import os
 from datetime import datetime
 from collections import defaultdict
 
@@ -73,7 +74,9 @@ def main():
     camera.listen(image_queue.put)
 
     timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-    csv_filename = f"telemetry_log_{timestamp_str}.csv"
+    # Ghi vào logs/telemetry/ (giống TelemetryLogger) thay vì thư mục hiện hành.
+    os.makedirs(os.path.join("logs", "telemetry"), exist_ok=True)
+    csv_filename = os.path.join("logs", "telemetry", f"telemetry_log_{timestamp_str}.csv")
     csv_file = open(csv_filename, mode='w', newline='')
     csv_writer = csv.writer(csv_file)
     csv_writer.writerow(

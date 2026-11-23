@@ -11,6 +11,14 @@ from ultralytics.data.utils import check_det_dataset
 from ultralytics.utils import YAML
 import torch
 
+import sys
+
+# Chạy bằng đường dẫn file thì sys.path[0] là thư mục script -> thêm project root
+# để `import config` / `from modules...` / `from scripts...` vẫn tìm thấy.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 from modules.provenance import file_record
 from modules.training_utils import collect_image_paths, deterministic_subset
 

@@ -50,6 +50,8 @@ import config as cfg
 try:
     from object_tracking import draw_detections
     from active_safety import ActiveSafetySystem
+    from safety_replay import SafetyReplayWriter, finish_capture
+    from provenance import carla_versions, git_state, runtime_manifest
     from mot_tracker import MultiObjectTracker
     from odd_monitor import ODDMonitor
     from mrm_controller import L3StateMachine
@@ -68,6 +70,7 @@ try:
     from perception_contracts import SensorFrameBundle
     from replay_io import ReplayWriter
     from ego_motion import EgoMotionEstimator
+    from radar_crossing import radar_reference_pose
     from scene_semantics import summarize_traffic_controls
     from simulation_guard import (SynchronousWorldSession,
                                   get_or_load_world)
@@ -94,7 +97,7 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
          replay_dir=None, duration_s=None, no_display: bool = False,
          run_report=None, performance_profile: str = "low-memory",
          runtime_mode: str = "async-stable", inference_device: str = "auto",
-         crash_journal=None, spawn_index: int = 0) -> bool:
+         crash_journal=None, spawn_index: int = 0, safety_replay_out=None) -> bool:
     stable_async, effective_performance = configure_runtime(
         cfg, performance_profile, runtime_mode)
     device_info = configure_inference_device(cfg, inference_device, runtime_mode)
@@ -133,6 +136,8 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
     traffic_manager = client.get_trafficmanager(cfg.TM_PORT)
     perception_runtime = None
     replay_writer = None
+    safety_capture = None
+    capture_result = None
     ego_vehicle = None
     sensor_sync_stats = None
     radar_sync_stats = None
@@ -221,7 +226,8 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
         turn_planner = TurnIntentPlanner(cfg)
 
         dashboard = DashboardView(lane_half_m=cfg.LANE_HALF_WIDTH_M)
-        telemetry = TelemetryLogger(flush_every=cfg.TELEMETRY_FLUSH_EVERY)
+        telemetry = TelemetryLogger(flush_every=cfg.TELEMETRY_FLUSH_EVERY,
+                                    directory=cfg.TELEMETRY_DIR)
         radar_processor = RadarProcessor(
             cfg.RADAR_X, cfg.RADAR_Y, cfg.RADAR_Z,
             reference_x_m=cfg.LIDAR_X, velocity_sign=cfg.RADAR_VELOCITY_SIGN,
@@ -262,6 +268,16 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
         crash_log = RuntimeCrashJournal(crash_journal)
         crash_log.emit('runtime', 'start', config=effective_performance,
                        requested_town=town, seed=seed)
+        if safety_replay_out:
+            provenance = runtime_manifest(carla_version=carla_versions(client),
+                                          detector=perception_runtime.object_tracker)
+            provenance.update(git_state(os.path.dirname(os.path.abspath(__file__))))
+            safety_capture = SafetyReplayWriter(safety_replay_out, {
+                "source": "carla-runtime", "town": report_town_name, "seed": seed,
+                "weather": weather, "runtime_mode": runtime_mode,
+                "effective_performance": effective_performance, "provenance": provenance,
+            })
+            safety_capture.start_episode("runtime", active_safety.fsm_config())
         if replay_dir:
             replay_writer = ReplayWriter(replay_dir, metadata={
                 "fps": cfg.FPS, "town": town, "weather": weather,
@@ -376,7 +392,9 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                                          controller_mode=ego_controller.mode)
                 # A TimeoutError here (async LiDAR wait) is handled by the
                 # `except TimeoutError` below: health + safe-stop attempt.
-                sensor_frame = sensor_rig.read(capture_timestamp)
+                with pipeline_metrics.stage("sensor_read"):
+                    sensor_frame = sensor_rig.read(capture_timestamp)
+                sensor_ready = time.perf_counter()
                 crash_log.record_runtime('sensor.after', world=world, ego=ego_vehicle,
                                          carla_map=carla_map, loop_index=frame_count,
                                          frame_id=sensor_frame.frame_id,
@@ -483,8 +501,10 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                     perception_runtime.record_lane_consumed(lane_result, time.monotonic())
                     if lane_result.error is not None:
                         print(f"[Lane] Frame {lane_result.frame_id} failed: {lane_result.error}")
+                # A sensor read can block. Check cached semantics at use time.
+                perception_now = time.monotonic()
                 object_age_ms = (
-                    (capture_timestamp - last_object_timestamp) * 1000.0
+                    (perception_now - last_object_timestamp) * 1000.0
                     if last_object_timestamp is not None else None)
                 if (object_age_ms is not None
                         and object_age_ms <= cfg.MAX_ASYNC_RESULT_AGE_MS):
@@ -499,8 +519,6 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                     detections = []
                     fused_detections = []
                     metrics = {'detected_vehicles': 0}
-                annotated_frame = rgb_frame.copy()
-                draw_detections(annotated_frame, detections)
                 pipeline_metrics.record_inference_age(object_age_ms)
                 traffic_control = summarize_traffic_controls(
                     fused_detections, cfg.TRAFFIC_LIGHT_RANGE_M, cfg.STOP_SIGN_RANGE_M)
@@ -519,7 +537,7 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                 selected_lane = lane_arbiter.select(
                     last_learned_lane, map_lane,
                     at_junction=lane_context.get("is_junction", False),
-                    now_s=capture_timestamp,
+                    now_s=perception_now,
                     max_age_ms=cfg.MAX_ASYNC_RESULT_AGE_MS)
                 lane_source_counts[selected_lane.source] = (
                     lane_source_counts.get(selected_lane.source, 0) + 1)
@@ -533,10 +551,17 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                     ego_motion=ego_motion, ego_speed_ms=ego_speed_ms,
                     radar_measurements=radar_targets, frame_id=w_frame,
                     radar_velocity_validated=radar_velocity_validated)
+                # Async operation can deliver an older radar scan. Only fit
+                # motion across aligned scans, using the pose at acquisition.
+                radar_pose = None
+                if radar_data is not None and radar_data.frame == w_frame and sim_dt_status in ("first", "ok"):
+                    radar_pose = radar_reference_pose(
+                        radar_data.transform, cfg.LIDAR_X - cfg.RADAR_X, -cfg.RADAR_Y)
                 decision = active_safety.update(
                     ego_speed_ms, fused_detections, lidar_obstacles, algo_dt,
                     tracks=tracks, path_points=control_path, lane_context=lane_context,
-                    radar_targets=radar_safety_targets)
+                    radar_targets=radar_safety_targets,
+                    radar_pose=radar_pose)
                 decision_trace.record(
                     frame_id=w_frame, decision=decision, ego_speed_ms=ego_speed_ms,
                     lidar_obstacles=lidar_obstacles, radar_targets=radar_safety_targets,
@@ -614,17 +639,24 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                                          carla_map=carla_map, frame_id=w_frame,
                                          controller_mode=ego_controller.mode,
                                          control_status=control_status, read_control=True)
-                control_window.cycle(time.perf_counter(), sim_time_s=sensor_frame.lidar_timestamp,
+                control_sent = time.perf_counter()
+                control_window.cycle(control_sent, sim_time_s=sensor_frame.lidar_timestamp,
                                      frame_id=w_frame)
-                pipeline_latency_ms = (time.perf_counter() - pipeline_t0) * 1000.0
+                pipeline_latency_ms = (control_sent - pipeline_t0) * 1000.0
+                pipeline_metrics.record("sensor_ready_to_control", (control_sent - sensor_ready) * 1000.0)
                 pipeline_metrics.record("safety_control", pipeline_latency_ms)
+                if safety_capture:
+                    with pipeline_metrics.stage("safety_replay_write"):
+                        safety_capture.record(active_safety, decision, l3, control_status, frame_id=w_frame)
                 pipeline_metrics.sample_gpu_memory()
                 # --- Telemetry (ghi thưa) ---
                 if frame_count % cfg.LOG_EVERY_N == 0:
                     telemetry.log(ego_vehicle, len(fused_detections))
 
                 # --- Dashboard + hiển thị (mỗi RENDER_EVERY_N khung -> giảm giật, tăng FPS) ---
-                if frame_count % cfg.RENDER_EVERY_N == 0:
+                if not no_display and frame_count % cfg.RENDER_EVERY_N == 0:
+                    annotated_frame = rgb_frame.copy()
+                    draw_detections(annotated_frame, detections)
                     metrics['speed'] = ego_speed_ms * 3.6
                     metrics['fsm_state'] = decision.state
                     metrics['collision_risk'] = decision.collision_risk
@@ -668,8 +700,7 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                     metrics['hough_lane_offset_m'] = (lane_detector.lane_offset_m
                                                        if lane_detector.lane_detected else None)
                     hud_frame = dashboard.render(lane_frame, metrics, lidar_obstacles, tracks=tracks)
-                    if not no_display:
-                        cv2.imshow("ADAS Portfolio - Central Dashboard", hud_frame)
+                    cv2.imshow("ADAS Portfolio - Central Dashboard", hud_frame)
 
                 # waitKey mỗi khung để cửa sổ phản hồi + bắt phím 'q' (rất rẻ).
                 if not no_display and cv2.waitKey(1) & 0xFF == ord('q'):
@@ -718,6 +749,10 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
         # Close the measured control window BEFORE teardown, so cleanup time
         # can never be counted as control-loop time.
         control_window.stop(time.perf_counter())
+        if safety_capture:
+            capture_result = finish_capture(
+                safety_capture, active_safety.steps,
+                stop_reason in {"duration_reached", "user_quit"} and active_safety.steps > 0)
         cleanup_summary = cleanup_runtime(
             client=client, world=world, actors=actor_list, sensor_rig=sensor_rig,
             traffic_spawner=traffic_spawner, session=sync_session,
@@ -776,6 +811,7 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                     sensor_loss_fallback=sensor_loss_fallback,
                     control_timing=control_window.summary(cfg.FPS, cfg.FIXED_DELTA),
                     sim_clock=sim_clock.summary(),
+                    safety_replay=capture_result,
                     l3_summary=(None if l3_sm is None else {
                         "final_state": l3_sm.state,
                         "tor_events": l3_sm.tor_events,
@@ -788,7 +824,10 @@ def main(num_vehicles: int = 30, hazard: bool = False, seed=None,
                 ),
             )
 
-    return run_pass and run_error is None
+    if capture_result:
+        print(f"[Safety replay] {capture_result}")
+    return (run_pass and run_error is None
+            and (capture_result is None or capture_result["status"] == "COMPLETE"))
 
 
 # ==============================================================================
@@ -808,6 +847,6 @@ if __name__ == '__main__':
                    runtime_mode=args.runtime_mode,
                    inference_device=args.inference_device,
                    crash_journal=args.crash_journal,
-                   spawn_index=args.spawn_index)
+                   spawn_index=args.spawn_index, safety_replay_out=args.safety_replay_out)
     if not success:
         sys.exit(1)

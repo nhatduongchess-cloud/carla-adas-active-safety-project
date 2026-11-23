@@ -6,6 +6,14 @@ import json
 import os
 from pathlib import Path
 
+import sys
+
+# Chạy bằng đường dẫn file thì sys.path[0] là thư mục script -> thêm project root
+# để `import config` / `from modules...` / `from scripts...` vẫn tìm thấy.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 from scripts.dataset.audit_week2_dataset import TAXONOMY
 from scripts.dataset.validate_dataset import digest
 

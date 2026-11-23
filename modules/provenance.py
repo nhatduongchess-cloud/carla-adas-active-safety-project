@@ -25,7 +25,7 @@ def file_record(path):
             "sha256": sha256_file(absolute)}
 
 
-def runtime_manifest(model_paths=None, carla_version=None, config=None):
+def runtime_manifest(model_paths=None, carla_version=None, config=None, *, detector=None):
     manifest = {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -36,6 +36,9 @@ def runtime_manifest(model_paths=None, carla_version=None, config=None):
         "models": [file_record(path) for path in (model_paths or [])],
         "config": dict(config or {}),
     }
+    if detector is not None:
+        manifest["models"] = [dict(record, exists=True) for record in detector.model_provenance]
+        manifest["model_load_errors"] = list(detector.provenance_errors)
     try:
         import torch
         manifest["torch"] = torch.__version__
@@ -61,16 +64,21 @@ def git_state(repo_root):
     """
     def run(*args):
         return subprocess.run(["git", "-C", str(repo_root), *args], capture_output=True,
-                              text=True, timeout=10, check=True).stdout
+                              timeout=10, check=True).stdout
     try:
-        commit = run("rev-parse", "HEAD").strip()
-        status = run("status", "--porcelain", "--untracked-files=no")
-        diff = run("diff", "HEAD") if status.strip() else ""
+        commit = run("rev-parse", "HEAD").decode("ascii").strip()
+        status = run("status", "--porcelain", "--untracked-files=normal")
+        # New Python modules can supply the entire FSM before their first commit.
+        untracked = run("ls-files", "-z", "--others", "--exclude-standard", "--", "*.py")
+        source_hashes = {name: sha256_file(os.path.join(repo_root, name))
+                         for name in untracked.decode("utf-8").split("\0") if name}
+        diff = run("diff", "--binary", "--no-ext-diff", "HEAD") if status.strip() else b""
     except Exception as exc:
         return {"git_commit": None, "git_dirty": None, "git_diff_sha256": None,
                 "unknown_reason": f"{type(exc).__name__}: {exc}"}
     return {"git_commit": commit, "git_dirty": bool(status.strip()),
-            "git_diff_sha256": (hashlib.sha256(diff.encode("utf-8")).hexdigest()
+            "git_untracked_python_sha256": source_hashes,
+            "git_diff_sha256": (hashlib.sha256(diff).hexdigest()
                                 if diff else None),
             "unknown_reason": None}
 

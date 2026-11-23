@@ -985,9 +985,11 @@ class RuntimeCrashJournalTests(unittest.TestCase):
         stream.flush.assert_called_once()
 
     def test_orchestrator_sensor_and_control_hook_order_without_importing_models(self):
-        # Execute the actual three-statement hook blocks from chinh.py with
+        # Execute the actual before/after hook blocks from chinh.py with
         # fixtures: avoid importing its models or contacting a simulator.
         import ast
+        import time
+        from modules.pipeline_metrics import PipelineMetrics
         source = (Path(__file__).resolve().parents[1] / 'chinh.py').read_text(encoding='utf-8')
         tree = ast.parse(source)
         main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
@@ -999,7 +1001,9 @@ class RuntimeCrashJournalTests(unittest.TestCase):
                     and node.value.args[0].value == phase)
         def block(phase):
             i = next(i for i, n in enumerate(loop.body) if is_hook(n, phase))
-            return compile(ast.fix_missing_locations(ast.Module(body=loop.body[i:i+3], type_ignores=[])),
+            end_phase = phase.replace(".before", ".after")
+            j = next(j for j in range(i + 1, len(loop.body)) if is_hook(loop.body[j], end_phase))
+            return compile(ast.fix_missing_locations(ast.Module(body=loop.body[i:j+1], type_ignores=[])),
                            'chinh.py hook block', 'exec')
         events = []
         log = Mock()
@@ -1011,7 +1015,7 @@ class RuntimeCrashJournalTests(unittest.TestCase):
         controller.apply.side_effect = lambda *a, **kw: (events.append('controller.apply') or {'mode':'custom'})
         scope = dict(crash_log=log, world=Mock(), ego_vehicle=Mock(), carla_map=Mock(),
                      frame_count=1, ego_controller=controller, sensor_rig=sensor,
-                     capture_timestamp=1., w_frame=12,
+                     capture_timestamp=1., w_frame=12, time=time, pipeline_metrics=PipelineMetrics(),
                      decision=SimpleNamespace(action='BRAKE',state='AEB',brake=1.),
                      l3={'override':False}, odd={'state':'NORMAL'}, target_kmh=20.,
                      traffic_control={}, turn=None)

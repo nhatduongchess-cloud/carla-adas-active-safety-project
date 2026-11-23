@@ -162,6 +162,8 @@ def build_argument_parser(cfg: Any) -> argparse.ArgumentParser:
                         help="map chạy (mặc định Town02 để giảm VRAM)")
     parser.add_argument('--record-replay', type=str, default=None,
                         help="ghi replay perception nén vào thư mục này")
+    parser.add_argument('--safety-replay-out', type=str, default=None,
+                        help="ghi từng quyết định AEB Python vào một thư mục mới")
     parser.add_argument('--duration', type=float, default=None,
                         help="tự dừng sau N giây mô phỏng")
     parser.add_argument('--no-display', action='store_true',

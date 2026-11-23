@@ -1,0 +1,1089 @@
+{
+  "schema_version": 1,
+  "source": "synthetic inputs passed to original ActiveSafetySystem.update",
+  "source_commit": "fa83772c6c14c7a78d10bdd8684ce6e5f6a974be",
+  "source_sha256": {
+    "modules/active_safety.py": "4f480f1ca439cd9fc0a76815b7f3fd1b6918504eb40facf301fda6fb8af045f5",
+    "modules/control_arbitration.py": "653311d90187b4399b63e27f9ed0eb709f072c2ffdbe1ab017d0eab3744434fc",
+    "modules/friction.py": "63083f9f891020b1c9c3aa7fc265d81bea2d0958bbb9da19005fb59ae8e0ba1f"
+  },
+  "effective_defaults": {
+    "lane_half": 1.75,
+    "min_cluster_points": 8,
+    "reaction_time": 1.0,
+    "min_safe_dist": 6.0,
+    "critical_ttc": 1.6,
+    "warning_ttc": 3.0,
+    "min_closing": 0.3,
+    "enable_evasion": true,
+    "evade_lookahead": 25.0,
+    "lead_slow_ratio": 0.55,
+    "follow_speed_diff": 60.0,
+    "lane_change_front_gap": 18.0,
+    "lane_change_rear_gap": 12.0,
+    "lane_change_prediction_s": 3.0,
+    "cut_in_prediction_s": 3.0,
+    "vru_lateral_margin": 0.8,
+    "vru_prediction_s": 4.0,
+    "mu": 0.8,
+    "gap_multiplier": 1.0,
+    "evade_commit_s": 1.5,
+    "brake_exit_factor": 1.4,
+    "evade_min_ttc": 2.0,
+    "follow_min_lead_speed": 3.0,
+    "creep_speed_thresh": 3.0,
+    "clear_confirm_s": 0.1
+  },
+  "baseline_checks": {
+    "selftest_passed": 210,
+    "offline_unittest_passed": 310
+  },
+  "episodes": [
+    {
+      "id": "clear-latch-dropout-release",
+      "steps": [
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "NORMAL",
+            "action": "DRIVE",
+            "brake": 0.0,
+            "slow_pct": 0.0,
+            "collision_risk": false,
+            "threat": {}
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 10,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  4,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "EMERGENCY_BRAKE",
+            "action": "BRAKE",
+            "brake": 1.0,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 4.0,
+              "source": "lidar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": 4.0,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 10.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 8,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  9,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "BRAKE_HOLD",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 9.0,
+              "source": "lidar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": 9.0,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 8.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025,
+            "lidar_valid": false
+          },
+          "decision": {
+            "state": "BRAKE_HOLD_NO_DATA",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {}
+          },
+          "transition_reason": "hold: no valid lidar observation"
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "BRAKE_HOLD",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {}
+          },
+          "transition_reason": "hold: confirming clear path"
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "BRAKE_HOLD",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {}
+          },
+          "transition_reason": "hold: confirming clear path"
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025,
+            "lidar_valid": false
+          },
+          "decision": {
+            "state": "BRAKE_HOLD_NO_DATA",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {}
+          },
+          "transition_reason": "hold: no valid lidar observation"
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "BRAKE_HOLD",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {}
+          },
+          "transition_reason": "hold: confirming clear path"
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "BRAKE_HOLD",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {}
+          },
+          "transition_reason": "hold: confirming clear path"
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "BRAKE_HOLD",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {}
+          },
+          "transition_reason": "hold: confirming clear path"
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "BRAKE_HOLD",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {}
+          },
+          "transition_reason": "hold: confirming clear path"
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "NORMAL",
+            "action": "DRIVE",
+            "brake": 0.0,
+            "slow_pct": 0.0,
+            "collision_risk": false,
+            "threat": {}
+          },
+          "transition_reason": "release: clear path observed for 0.125 s"
+        },
+        {
+          "input": {
+            "ego_speed_ms": 0,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "NORMAL",
+            "action": "DRIVE",
+            "brake": 0.0,
+            "slow_pct": 0.0,
+            "collision_risk": false,
+            "threat": {}
+          },
+          "transition_reason": "release: clear path observed for 0.125 s"
+        }
+      ]
+    },
+    {
+      "id": "distance-boundary",
+      "steps": [
+        {
+          "input": {
+            "ego_speed_ms": 12,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025,
+            "radar_targets": [
+              {
+                "distance_m": 6.01,
+                "lateral_m": 0.0
+              }
+            ]
+          },
+          "decision": {
+            "state": "FOLLOW",
+            "action": "SLOW",
+            "brake": 0.0,
+            "slow_pct": 60.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 6.01,
+              "source": "radar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": null,
+              "tracker_distance_m": null,
+              "radar_closing_ms": 0.0,
+              "radar_distance_m": 6.01,
+              "obstacle_speed_ms": 12.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 12,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025,
+            "radar_targets": [
+              {
+                "distance_m": 6.0,
+                "lateral_m": 0.0
+              }
+            ]
+          },
+          "decision": {
+            "state": "FOLLOW",
+            "action": "SLOW",
+            "brake": 0.0,
+            "slow_pct": 60.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 6.0,
+              "source": "radar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": null,
+              "tracker_distance_m": null,
+              "radar_closing_ms": 0.0,
+              "radar_distance_m": 6.0,
+              "obstacle_speed_ms": 12.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 12,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025,
+            "radar_targets": [
+              {
+                "distance_m": 5.99,
+                "lateral_m": 0.0
+              }
+            ]
+          },
+          "decision": {
+            "state": "EMERGENCY_BRAKE",
+            "action": "BRAKE",
+            "brake": 1.0,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 5.99,
+              "source": "radar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": null,
+              "tracker_distance_m": null,
+              "radar_closing_ms": 0.0,
+              "radar_distance_m": 5.99,
+              "obstacle_speed_ms": 12.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        }
+      ]
+    },
+    {
+      "id": "moving-lead",
+      "steps": [
+        {
+          "input": {
+            "ego_speed_ms": 15,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  19.05,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "FOLLOW",
+            "action": "SLOW",
+            "brake": 0.0,
+            "slow_pct": 60.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 19.05,
+              "source": "lidar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": 19.05,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 15.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 15,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  19.0,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025,
+            "conditions": [
+              0.39,
+              1.3
+            ]
+          },
+          "decision": {
+            "state": "FOLLOW",
+            "action": "SLOW",
+            "brake": 0.0,
+            "slow_pct": 60.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 19.0,
+              "source": "lidar",
+              "ttc_s": 9.5,
+              "closing_ms": 2.0,
+              "lidar_distance_m": 19.0,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 13.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 15,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  18.95,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "FOLLOW",
+            "action": "SLOW",
+            "brake": 0.0,
+            "slow_pct": 60.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 18.95,
+              "source": "lidar",
+              "ttc_s": 9.47,
+              "closing_ms": 2.0,
+              "lidar_distance_m": 18.95,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 13.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        }
+      ]
+    },
+    {
+      "id": "stopped-blocker",
+      "steps": [
+        {
+          "input": {
+            "ego_speed_ms": 2,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  8,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025,
+            "lane_context": {
+              "left_change_allowed": false,
+              "right_change_allowed": false
+            }
+          },
+          "decision": {
+            "state": "BRAKE_TO_STOP",
+            "action": "BRAKE",
+            "brake": 1.0,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 8.0,
+              "source": "lidar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": 8.0,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 2.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        }
+      ]
+    },
+    {
+      "id": "evade-right-blocked",
+      "steps": [
+        {
+          "input": {
+            "ego_speed_ms": 10,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  20.25,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025,
+            "lane_context": {
+              "current_lane_id": 1,
+              "left_allowed": true,
+              "right_allowed": true
+            }
+          },
+          "decision": {
+            "state": "FOLLOW",
+            "action": "SLOW",
+            "brake": 0.0,
+            "slow_pct": 60.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 20.25,
+              "source": "lidar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": 20.25,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 10.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 10,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  20,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025,
+            "lane_context": {
+              "current_lane_id": 1,
+              "left_allowed": true,
+              "right_allowed": true
+            }
+          },
+          "decision": {
+            "state": "EVADE_RIGHT",
+            "action": "LANE_CHANGE_RIGHT",
+            "brake": 0.0,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 20.0,
+              "source": "lidar",
+              "ttc_s": 2.0,
+              "closing_ms": 10.0,
+              "lidar_distance_m": 20.0,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 0.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 10,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  19.75,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              },
+              {
+                "centroid": [
+                  9,
+                  3.5,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.05,
+            "lane_context": {
+              "current_lane_id": 1,
+              "left_allowed": true,
+              "right_allowed": true
+            }
+          },
+          "decision": {
+            "state": "EMERGENCY_BRAKE",
+            "action": "BRAKE",
+            "brake": 1.0,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 19.75,
+              "source": "lidar",
+              "ttc_s": 3.95,
+              "closing_ms": 5.0,
+              "lidar_distance_m": 19.75,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 5.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        }
+      ]
+    },
+    {
+      "id": "evade-left-and-completion",
+      "steps": [
+        {
+          "input": {
+            "ego_speed_ms": 10,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  20.25,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              },
+              {
+                "centroid": [
+                  9,
+                  3.5,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025,
+            "lane_context": {
+              "current_lane_id": 1,
+              "left_allowed": true,
+              "right_allowed": true
+            }
+          },
+          "decision": {
+            "state": "FOLLOW",
+            "action": "SLOW",
+            "brake": 0.0,
+            "slow_pct": 60.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 20.25,
+              "source": "lidar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": 20.25,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 10.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 10,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  20,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              },
+              {
+                "centroid": [
+                  9,
+                  3.5,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025,
+            "lane_context": {
+              "current_lane_id": 1,
+              "left_allowed": true,
+              "right_allowed": true
+            }
+          },
+          "decision": {
+            "state": "EVADE_LEFT",
+            "action": "LANE_CHANGE_LEFT",
+            "brake": 0.0,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 20.0,
+              "source": "lidar",
+              "ttc_s": 2.0,
+              "closing_ms": 10.0,
+              "lidar_distance_m": 20.0,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 0.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 10,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  20,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025,
+            "lane_context": {
+              "current_lane_id": 2,
+              "left_allowed": true,
+              "right_allowed": true
+            }
+          },
+          "decision": {
+            "state": "FOLLOW",
+            "action": "SLOW",
+            "brake": 0.0,
+            "slow_pct": 60.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 20.0,
+              "source": "lidar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": 20.0,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 10.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 10,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  39,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025
+          },
+          "decision": {
+            "state": "NORMAL",
+            "action": "DRIVE",
+            "brake": 0.0,
+            "slow_pct": 0.0,
+            "collision_risk": false,
+            "threat": {
+              "distance_m": 39.0,
+              "source": "lidar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": 39.0,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 10.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        }
+      ]
+    },
+    {
+      "id": "radar-and-tracker",
+      "steps": [
+        {
+          "input": {
+            "ego_speed_ms": 15,
+            "fused_detections": [],
+            "lidar_obstacles": [],
+            "dt": 0.025,
+            "radar_targets": [
+              {
+                "distance_m": 12,
+                "lateral_m": 0,
+                "closing_speed_ms": 10
+              }
+            ],
+            "tracks": [
+              {
+                "pos": [
+                  18,
+                  2.8
+                ],
+                "vel": [
+                  -5,
+                  -1.2
+                ],
+                "class_name": "Person",
+                "ego_compensated": false
+              }
+            ]
+          },
+          "decision": {
+            "state": "EMERGENCY_BRAKE",
+            "action": "BRAKE",
+            "brake": 1.0,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 12.0,
+              "source": "radar",
+              "ttc_s": 0.25,
+              "closing_ms": 10.0,
+              "lidar_distance_m": null,
+              "tracker_distance_m": 16.75,
+              "radar_closing_ms": 10.0,
+              "radar_distance_m": 12.0,
+              "obstacle_speed_ms": 5.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        },
+        {
+          "input": {
+            "ego_speed_ms": 10,
+            "fused_detections": [],
+            "lidar_obstacles": [
+              {
+                "centroid": [
+                  6.4,
+                  0,
+                  0
+                ],
+                "point_count": 20
+              }
+            ],
+            "dt": 0.025,
+            "path_points": [
+              [
+                0,
+                0
+              ],
+              [
+                10,
+                1
+              ],
+              [
+                20,
+                4
+              ],
+              [
+                35,
+                12
+              ]
+            ]
+          },
+          "decision": {
+            "state": "BRAKE_HOLD",
+            "action": "BRAKE",
+            "brake": 0.7,
+            "slow_pct": 0.0,
+            "collision_risk": true,
+            "threat": {
+              "distance_m": 6.37,
+              "source": "lidar",
+              "ttc_s": null,
+              "closing_ms": 0.0,
+              "lidar_distance_m": 6.37,
+              "tracker_distance_m": null,
+              "radar_closing_ms": null,
+              "radar_distance_m": null,
+              "obstacle_speed_ms": 10.0,
+              "label": "obstacle"
+            }
+          },
+          "transition_reason": null
+        }
+      ]
+    }
+  ],
+  "arbitration": [
+    {
+      "l3": {
+        "override": false
+      },
+      "action": "BRAKE",
+      "brake": 1.0,
+      "expected": null
+    },
+    {
+      "l3": {
+        "override": true,
+        "state": "MRM_EXECUTING",
+        "target_decel_ms2": 1
+      },
+      "action": "BRAKE",
+      "brake": 1.0,
+      "expected": {
+        "brake": 1.0,
+        "hand_brake": false,
+        "source": "aeb",
+        "aeb_brake": 1.0,
+        "mrm_brake": 0.16666666666666666
+      }
+    },
+    {
+      "l3": {
+        "override": true,
+        "state": "MRM_EXECUTING",
+        "target_decel_ms2": 3
+      },
+      "action": "BRAKE",
+      "brake": 0.5,
+      "expected": {
+        "brake": 0.5,
+        "hand_brake": false,
+        "source": "mrm",
+        "aeb_brake": 0.5,
+        "mrm_brake": 0.5
+      }
+    },
+    {
+      "l3": {
+        "override": true,
+        "state": "MRM_EXECUTING",
+        "target_decel_ms2": 4
+      },
+      "action": "BRAKE",
+      "brake": 0.25,
+      "expected": {
+        "brake": 0.6666666666666666,
+        "hand_brake": false,
+        "source": "mrm",
+        "aeb_brake": 0.25,
+        "mrm_brake": 0.6666666666666666
+      }
+    },
+    {
+      "l3": {
+        "override": true,
+        "state": "SAFE_STOP"
+      },
+      "action": "DRIVE",
+      "brake": 0.0,
+      "expected": {
+        "brake": 1.0,
+        "hand_brake": true,
+        "source": "mrm",
+        "aeb_brake": 0.0,
+        "mrm_brake": 1.0
+      }
+    }
+  ]
+}

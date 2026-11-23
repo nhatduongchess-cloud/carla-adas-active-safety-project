@@ -417,6 +417,51 @@ def _dynamic_object(world, ego, tm):
     return RunningScenario([walker], trigger_distance=22.0, on_trigger=cross)
 
 
+def _sidewalk_control(parallel):
+    """Matched negative control with the same walker, spawn and trigger distance."""
+    def build(world, ego, tm):
+        import carla
+        walker, meta = _spawn_walker(world, ego, 20., side='right')
+        origin = None
+        metrics = {"passed_walker": False, "pass_frame": None, "min_lateral_m": None,
+                   "travel_m": 0., "braked_on_approach": False, "evaded_on_approach": False}
+
+        def start(sc, e, w):
+            right, _ = meta
+            direction = carla.Vector3D(x=right.y, y=-right.x)
+            walker.apply_control(carla.WalkerControl(direction=direction, speed=1.6 if parallel else 0.))
+
+        def observe(sc, frame, e, w):
+            nonlocal origin
+            if walker is None or not walker.is_alive:
+                raise RuntimeError("sidewalk walker unavailable")
+            pos, tf = walker.get_location(), e.get_transform()
+            if origin is None:
+                origin = pos
+            dx, dy = pos.x-tf.location.x, pos.y-tf.location.y
+            fwd, right = tf.get_forward_vector(), tf.get_right_vector()
+            if not metrics["passed_walker"]:
+                lateral = abs(dx*right.x + dy*right.y)
+                last = metrics["min_lateral_m"]
+                metrics["min_lateral_m"] = lateral if last is None else min(last, lateral)
+                if dx*fwd.x + dy*fwd.y < 0.:
+                    metrics.update(passed_walker=True, pass_frame=frame)
+            metrics["travel_m"] = max(metrics["travel_m"], math.hypot(pos.x-origin.x, pos.y-origin.y))
+
+        scenario = RunningScenario([walker], trigger_distance=22., on_trigger=start, on_tick=observe)
+        scenario.sidewalk_metrics = metrics
+        return scenario
+    return build
+
+
+SIDEWALK_CONTROLS = [
+    ScenarioSpec("StandingPedestrian", "sidewalk", "No AEB", "Stationary roadside pedestrian.",
+                 _sidewalk_control(False)),
+    ScenarioSpec("ParallelPedestrian", "sidewalk", "No AEB", "Pedestrian walking along roadside.",
+                 _sidewalk_control(True)),
+]
+
+
 def _construction(world, ego, tm):
     actors = []
     blocker = _spawn_ahead(world, ego, 26.0)

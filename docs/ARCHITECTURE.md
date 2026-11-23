@@ -601,8 +601,11 @@ separates them. A short run that survives is not evidence that short runs are sa
 than in this code.
 
 **G8 — `DynamicObjectCrossing` reacts late, and it was previously unmeasurable.**
-Measured on HEAD against a live server on 2026-09-19: the scenario commands its
-first brake at frame 49, **1.225 s** after `hazard_frame`, against a stated
+
+**2026-11-23 follow-up.** The revised radar motion prediction and pedestrian track association met the original deadline in all 20 Town02 clear/storm trials. The maximum first-response delay was 0.700 s and the maximum delay to a sent AEB command was 0.725 s. Four matched sidewalk controls produced zero AEB commands. The September results below describe the earlier system. [Per-case evidence](benchmarks/pedestrian_deadline_20261123.json)
+
+Measured on HEAD against a live server on 2026-09-19: the harness records the
+first safety response at frame 49, **1.225 s** after `hazard_frame`, against a stated
 budget of 1.0 s. It brakes and never collides. This paragraph used to add that it
 "holds more than 3.1 m of clearance, so this is lateness rather than a safety
 failure". That figure matched nothing in the data, and every clearance recorded at
@@ -627,16 +630,7 @@ before**, because the 2026-09-01 harness recorded `hazard_frame: null` and
 incapable of failing.
 
 *Update, 2026-09-27 evening (ten seeds each in clear and storm, `b3bba41`).*
-8/10 and 7/10. Over all 29 v2 runs the reaction splits by the source that won
-the brake decision: 23 via the camera tracker at 0.50–0.95 s, all passing; 6 via
-the radar at exactly 1.225 s (frame 49, 8.23 m, TTC 0.99 s), all failing. The
-constant 49 frames is therefore the geometric path's detection point for this
-fixed scene, not a start-up cost; this paragraph previously guessed at a
-tracker confirmation count or inference warm-up, and the repeats replace that
-guess. The open question is narrower: why, in about one run in five, the camera
-tracker has not triggered the brake by 1.0 s. It is not seed-fixed (only
-seed 1 was late in both weathers) and ten runs per weather show no weather
-effect. The scenario reports have no per-frame trace, so it is not traced.
+Eight of ten clear runs and seven of ten storm runs met the 1.0 s requirement. Across all 29 v2 crossing runs, 23 recorded tracker as the nearest-distance source at first response (0.50–0.95 s). Six recorded radar at frame 49 (1.225 s). The FSM selects distance and TTC independently. Distinguishing perception latency, track formation and braking logic requires per-frame records of each input and of the first brake command.
 Evidence: [`v2_doc_clear_10seed.json`](benchmarks/v2_doc_clear_10seed.json),
 [`v2_doc_storm_10seed.json`](benchmarks/v2_doc_storm_10seed.json),
 [`head_doc_probe.json`](benchmarks/head_doc_probe.json),

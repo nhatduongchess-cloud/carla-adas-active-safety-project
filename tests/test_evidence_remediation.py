@@ -624,6 +624,29 @@ class L3HarnessReportTests(unittest.TestCase):
 
 
 class ProvenanceTests(unittest.TestCase):
+    def test_dirty_state_covers_new_python_and_non_ascii_diff(self):
+        import hashlib
+        from pathlib import Path
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder:
+            def git(*args):
+                return subprocess.check_output(["git", "-C", folder, *args])
+
+            git("init", "-q")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "fixture")
+            source = Path(folder) / "fsm.py"
+            source.write_bytes("# đường đi\n".encode())
+            state = git_state(folder)
+            self.assertTrue(state["git_dirty"], state)
+            self.assertEqual(state["git_untracked_python_sha256"]["fsm.py"],
+                             hashlib.sha256(source.read_bytes()).hexdigest())
+            git("add", "fsm.py")
+            expected = git("diff", "--binary", "--no-ext-diff", "HEAD")
+            self.assertEqual(git_state(folder)["git_diff_sha256"], hashlib.sha256(expected).hexdigest())
+
     def test_git_state_outside_a_repository_says_why(self):
         import tempfile
         with tempfile.TemporaryDirectory() as folder:

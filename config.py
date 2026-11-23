@@ -207,6 +207,7 @@ LANE_EVERY_N = 4               # learned lane/Hough shadow 10 Hz
 RENDER_EVERY_N = 3            # vẽ dashboard + imshow mỗi 3 khung
 LOG_EVERY_N = 6              # ghi telemetry mỗi 6 khung
 TELEMETRY_FLUSH_EVERY = 15     # ghi đĩa telemetry thưa lại (bớt I/O mỗi khung)
+TELEMETRY_DIR = "logs/telemetry"  # nơi ghi telemetry_log_*.csv (không rải ở thư mục gốc)
 CUDNN_BENCHMARK = True         # bật cudnn.benchmark cho kích thước cố định (nhanh, không đổi độ chính xác)
 MAX_ASYNC_RESULT_AGE_MS = 150.0
 GPU_QUEUE_SIZE = 1

@@ -4,6 +4,14 @@ import argparse
 import json
 import os
 
+import sys
+
+# Chạy bằng đường dẫn file thì sys.path[0] là thư mục script -> thêm project root
+# để `import config` / `from modules...` / `from scripts...` vẫn tìm thấy.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 import config as cfg
 from modules.provenance import runtime_manifest, write_manifest
 

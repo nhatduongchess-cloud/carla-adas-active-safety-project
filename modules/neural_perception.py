@@ -17,6 +17,48 @@ from sensor_fusion import SensorFusion
 from ufldv2_backend import UFLDv2Backend
 
 
+def build_lane_perception(cfg):
+    """Construct the calibrated lane adapter and a new per-episode arbiter."""
+    fx, fy, cx, cy = cfg.camera_intrinsics(
+        cfg.CAM_WIDTH, cfg.CAM_HEIGHT, cfg.CAM_FOV)
+    lane_backend = None
+    backend_error: Optional[str] = None
+    if cfg.LEARNED_LANE_ENABLED:
+        try:
+            lane_backend = UFLDv2Backend(
+                cfg.LEARNED_LANE_MODEL_PATH,
+                cfg.LEARNED_LANE_MODEL_SHA256,
+                device=cfg.LEARNED_LANE_DEVICE,
+                use_fp16=cfg.LEARNED_LANE_FP16,
+            )
+            print("[Lane] UFLDv2 Tusimple ResNet18 ready "
+                  f"({cfg.LEARNED_LANE_DEVICE}, "
+                  f"{'FP16' if lane_backend.use_fp16 else 'FP32'}).")
+        except Exception as exc:
+            backend_error = f"{type(exc).__name__}: {exc}"
+            print("[Lane] UFLDv2 unavailable; map fallback active: "
+                  f"{backend_error}")
+
+    adapter = LearnedLaneAdapter(
+        GroundProjector(fx, fy, cx, cy, cfg.CAM_Z, cfg.CAM_X, cfg.LIDAR_X),
+        backend=lane_backend,
+        model_path=cfg.LEARNED_LANE_MODEL_PATH,
+        input_size=(cfg.LEARNED_LANE_INPUT_WIDTH,
+                    cfg.LEARNED_LANE_INPUT_HEIGHT),
+    )
+    if backend_error:
+        adapter.provenance_error = backend_error
+    arbiter = LaneSourceArbiter(
+        cfg.LEARNED_LANE_CONFIDENCE,
+        cfg.LEARNED_LANE_STABLE_FRAMES,
+        cfg.LEARNED_LANE_INVALID_FRAMES,
+        cfg.LANE_WIDTH_MIN_M,
+        cfg.LANE_WIDTH_MAX_M,
+        cfg.LANE_GEOMETRY_JUMP_M,
+    )
+    return adapter, arbiter, backend_error
+
+
 class NeuralPerceptionRuntime:
     """Own YOLO/UFLDv2 initialization, fusion workers and GPU queue."""
 
@@ -56,43 +98,7 @@ class NeuralPerceptionRuntime:
                         cfg.LIDAR_ROLL, cfg.LIDAR_PITCH, cfg.LIDAR_YAW),
         )
 
-        fx, fy, cx, cy = cfg.camera_intrinsics(
-            cfg.CAM_WIDTH, cfg.CAM_HEIGHT, cfg.CAM_FOV)
-        lane_backend = None
-        self.lane_backend_error: Optional[str] = None
-        if cfg.LEARNED_LANE_ENABLED:
-            try:
-                lane_backend = UFLDv2Backend(
-                    cfg.LEARNED_LANE_MODEL_PATH,
-                    cfg.LEARNED_LANE_MODEL_SHA256,
-                    device=cfg.LEARNED_LANE_DEVICE,
-                    use_fp16=cfg.LEARNED_LANE_FP16,
-                )
-                print("[Lane] UFLDv2 Tusimple ResNet18 ready "
-                      f"({cfg.LEARNED_LANE_DEVICE}, "
-                      f"{'FP16' if lane_backend.use_fp16 else 'FP32'}).")
-            except Exception as exc:
-                self.lane_backend_error = f"{type(exc).__name__}: {exc}"
-                print("[Lane] UFLDv2 unavailable; map fallback active: "
-                      f"{self.lane_backend_error}")
-
-        self.lane_adapter = LearnedLaneAdapter(
-            GroundProjector(fx, fy, cx, cy, cfg.CAM_Z, cfg.CAM_X, cfg.LIDAR_X),
-            backend=lane_backend,
-            model_path=cfg.LEARNED_LANE_MODEL_PATH,
-            input_size=(cfg.LEARNED_LANE_INPUT_WIDTH,
-                        cfg.LEARNED_LANE_INPUT_HEIGHT),
-        )
-        if self.lane_backend_error:
-            self.lane_adapter.provenance_error = self.lane_backend_error
-        self.lane_arbiter = LaneSourceArbiter(
-            cfg.LEARNED_LANE_CONFIDENCE,
-            cfg.LEARNED_LANE_STABLE_FRAMES,
-            cfg.LEARNED_LANE_INVALID_FRAMES,
-            cfg.LANE_WIDTH_MIN_M,
-            cfg.LANE_WIDTH_MAX_M,
-            cfg.LANE_GEOMETRY_JUMP_M,
-        )
+        self.lane_adapter, self.lane_arbiter, self.lane_backend_error = build_lane_perception(cfg)
         # Same two-worker concurrency as before, but lane has no queued backlog.
         # Object keeps the only replaceable pending slot; a busy lane skips work.
         self._lane_scheduler = (

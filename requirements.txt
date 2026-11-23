@@ -9,7 +9,7 @@
 # ------------------------------------------------------------------------------
 
 # --- Core numerics & vision ---------------------------------------------------
-numpy>=1.26,<2.0
+numpy>=2.0                   # requirements.lock pins 2.5.1 (the tested version)
 opencv-python>=4.9.0
 scikit-learn>=1.4.0          # DBSCAN clustering for the LiDAR forward corridor
 

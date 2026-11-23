@@ -13,6 +13,7 @@ import os
 import sys
 import queue
 import argparse
+import tempfile
 import time
 import traceback
 import numpy as np
@@ -28,6 +29,7 @@ from object_tracking import EnsembleVehicleTracker
 from lidar_processor import LidarProcessor
 from sensor_fusion import SensorFusion
 from active_safety import ActiveSafetySystem
+from safety_replay import SafetyReplayWriter, finish_capture
 from mot_tracker import MultiObjectTracker
 from odd_monitor import ODDMonitor
 from mrm_controller import L3StateMachine
@@ -47,9 +49,12 @@ from sensor_setup import (configure_camera_blueprint, configure_lidar_blueprint,
 from radar_processor import RadarProcessor
 from sensor_health import SensorHealthMonitor
 from inference_scheduler import LatestFrameScheduler
+from lane_source import map_lane_estimate
+from pedestrian_response import PedestrianResponse, walker_position
 from pipeline_metrics import PipelineMetrics
 from weather_config import load_weather_profiles, weather_kwargs
 from ego_motion import EgoMotionEstimator
+from radar_crossing import radar_reference_pose
 from scene_semantics import summarize_traffic_controls
 from simulation_guard import (force_traffic_lights_green, restore_traffic_lights,
                               get_or_load_world)
@@ -84,13 +89,18 @@ def _pc(meas):
     return np.reshape(p, (int(p.shape[0] / 4), 4)).copy()
 
 
-def run_one(client, world, bp_lib, spec, shared, args):
+def run_one(client, world, bp_lib, spec, shared, args, *, replay_dir=None, provenance=None):
     object_tracker, lidar_processor, sensor_fusion = shared
     dt = cfg.FIXED_DELTA
     actors = []
     camera = lidar = radar = collision = None
     scenario = None
     inference_scheduler = None
+    focused = args.scenarios == "pedestrian"
+    trace_crossing = replay_dir and (spec.name == "DynamicObjectCrossing" or spec.category == "sidewalk")
+    crossing = PedestrianResponse() if focused or trace_crossing else None
+    lane_scheduler = None
+    safety_capture = None
     light_snapshot = []
 
     safety = ActiveSafetySystem(
@@ -156,8 +166,22 @@ def run_one(client, world, bp_lib, spec, shared, args):
     source_at_reaction = None
     sync_stats = SensorSyncStats()
     last_control_status = {}
+    warmup_steps = max(0, int(1.5 * cfg.FPS) - 1)
+    scenario_steps = int(args.seconds * cfg.FPS)
 
     try:
+        if focused:
+            from neural_perception import build_lane_perception
+            lane_adapter, lane_arbiter, lane_error = build_lane_perception(cfg)
+            if not lane_adapter.ready or not object_tracker.model_provenance:
+                raise RuntimeError(f"pedestrian suite requires local YOLO and lane weights: "
+                                   f"{lane_error or lane_adapter.provenance_error or object_tracker.provenance_errors}")
+
+            def infer_lane(payload, frame_id):
+                image, timestamp = payload
+                return lane_adapter.infer(image, frame_id, timestamp)
+
+            lane_scheduler = LatestFrameScheduler(infer_lane, "scenario-lane")
         world.set_weather(carla.WeatherParameters(**weather_kwargs(profile))
                           if profile else carla.WeatherParameters.ClearNoon)
         light_snapshot = force_traffic_lights_green(world)
@@ -207,7 +231,17 @@ def run_one(client, world, bp_lib, spec, shared, args):
         # camera/LiDAR cùng có đúng frame rồi mới bắt đầu tính KPI.
         warmup_sensor_streams(world, {"camera": iq, "lidar": lq})
         # Cho ego chạy vài tick rồi mới dựng vật cản (để có tốc độ).
-        for warm_index in range(max(0, int(1.5 * cfg.FPS) - 1)):
+        if replay_dir:
+            safety_capture = SafetyReplayWriter(replay_dir, {
+                "source": "carla-scenario", "scenario": spec.name,
+                "town": world.get_map().name, "seed": args.seed, "weather": args.weather,
+                "fault": args.fault, "fault_start_s": args.fault_start,
+                "fault_duration_s": args.fault_duration,
+                "warmup_steps": warmup_steps, "runtime_mode": "synchronous",
+                "seconds_per_scenario": args.seconds, "provenance": provenance,
+            })
+            safety_capture.start_episode(spec.name, safety.fsm_config())
+        for warm_index in range(warmup_steps):
             warm_frame = world.tick()
             retrieve_exact_frame(iq, warm_frame, sensor_name="camera", stats=sync_stats)
             retrieve_exact_frame(lq, warm_frame, sensor_name="lidar", stats=sync_stats)
@@ -220,15 +254,20 @@ def run_one(client, world, bp_lib, spec, shared, args):
             warm_l3 = l3_sm.update(
                 odd['state'], False, warm_speed, conditions['mu'], dt,
                 critical=odd['critical'])
-            controller.apply(
+            warm_control = controller.apply(
                 warm_decision, warm_l3, odd['state'], -warm_index - 1,
                 target_speed_kmh=30.0, respect_traffic_controls=False)
+            if safety_capture:
+                safety_capture.record(safety, warm_decision, warm_l3, warm_control,
+                                      frame_id=warm_frame, phase="warmup")
         scenario = spec.builder(world, ego, tm)
         last_detections = []
         last_fused = []
         last_inference_frame = None
 
-        for frame in range(int(args.seconds * cfg.FPS)):
+        last_camera_loss_frame = -1
+        last_lane_frame = None
+        for frame in range(scenario_steps):
             w_frame = world.tick()
             pipeline_t0 = time.perf_counter()
             sensor_t0 = time.perf_counter()
@@ -266,6 +305,10 @@ def run_one(client, world, bp_lib, spec, shared, args):
             stage_metrics.record("safety_geometry",
                                  (time.perf_counter() - geometry_t0) * 1000.0)
             detect_frame = frame % cfg.DETECT_EVERY_N == 0
+            if not camera_ok:
+                last_camera_loss_frame = w_frame
+            if lane_scheduler and camera_ok and frame % cfg.LANE_EVERY_N == 0:
+                lane_scheduler.submit(w_frame, capture_ts, (rgb, capture_ts), only_if_idle=True)
             if detect_frame and camera_ok:
                 # Fault injection must affect both the 40 Hz safety path and
                 # the async perception-fusion path.  Otherwise a lidar-loss
@@ -277,14 +320,16 @@ def run_one(client, world, bp_lib, spec, shared, args):
                     w_frame, capture_ts, (rgb.copy(), perception_pc.copy()))
             inference_result = inference_scheduler.latest(
                 w_frame, time.monotonic(), cfg.MAX_ASYNC_RESULT_AGE_MS)
-            fresh_inference = bool(
-                camera_ok and inference_result and inference_result.error is None
-                and inference_result.frame_id != last_inference_frame)
+            usable = (camera_ok and inference_result is not None and inference_result.error is None
+                      and inference_result.frame_id > last_camera_loss_frame)
+            fresh_inference = usable and inference_result.frame_id != last_inference_frame
             if fresh_inference:
+                if focused:
+                    inference_scheduler.record_consumed(inference_result, time.monotonic())
                 last_inference_frame = inference_result.frame_id
                 last_detections = inference_result.payload["detections"]
                 last_fused = inference_result.payload["fused"]
-            elif not camera_ok:
+            elif not usable:
                 last_detections, last_fused = [], []
             _, fused = last_detections, last_fused
             inference_age_ms = (inference_result.age_ms(time.monotonic())
@@ -294,17 +339,36 @@ def run_one(client, world, bp_lib, spec, shared, args):
             vel = ego.get_velocity()
             speed = (vel.x ** 2 + vel.y ** 2 + vel.z ** 2) ** 0.5
             decision_t0 = time.perf_counter()
-            ego_motion = ego_motion_tracker.update(ego.get_transform())
+            ego_transform = ego.get_transform()
+            radar_pose = radar_reference_pose(ego_transform, cfg.LIDAR_X)
+            ego_motion = ego_motion_tracker.update(ego_transform)
             tracks = mot.update(
                 fused if fresh_inference else [], dt,
                 ego_motion=ego_motion, ego_speed_ms=speed,
                 radar_measurements=radar_targets, frame_id=w_frame,
                 radar_velocity_validated=radar_velocity_validated)
             ego_path, lane_context = controller.path_context()
+            control_path = ego_path
+            if focused:
+                now = time.monotonic()
+                lane_result = lane_scheduler.latest(w_frame, now, cfg.MAX_ASYNC_RESULT_AGE_MS)
+                candidate = (lane_result.payload if camera_ok and lane_result is not None
+                             and lane_result.error is None and lane_result.frame_id > last_camera_loss_frame
+                             else None)
+                if candidate is not None and candidate.frame_id != last_lane_frame:
+                    lane_scheduler.record_consumed(lane_result, now)
+                    last_lane_frame = candidate.frame_id
+                selected_lane = lane_arbiter.select(
+                    candidate, map_lane_estimate(w_frame, capture_ts, ego_path),
+                    at_junction=lane_context.get("is_junction", False),
+                    now_s=now, max_age_ms=cfg.MAX_ASYNC_RESULT_AGE_MS)
+                if selected_lane.source == "learned":
+                    control_path = selected_lane.centerline_m
             decision = safety.update(
                 speed, fused, obstacles, dt, tracks=tracks,
-                path_points=ego_path, lane_context=lane_context,
+                path_points=control_path, lane_context=lane_context,
                 radar_targets=radar_safety_targets,
+                radar_pose=radar_pose,
                 # An injected LiDAR loss produces [] obstacles; say it is no
                 # data, so it cannot release a latched brake as a clear road.
                 lidar_valid=lidar_ok)
@@ -328,6 +392,34 @@ def run_one(client, world, bp_lib, spec, shared, args):
             pipeline_latency_ms = (time.perf_counter() - pipeline_t0) * 1000.0
             safety_latency_ms = (time.perf_counter() - safety_t0) * 1000.0
             stage_metrics.record("safety_loop", safety_latency_ms)
+            observations = None
+            if crossing is not None:
+                if not focused:
+                    candidate = None
+                    selected_lane = map_lane_estimate(w_frame, capture_ts, ego_path)
+                observations = crossing.observe(
+                    frame, w_frame, scenario.hazard_frame, dt,
+                    last_detections if fresh_inference else [], tracks,
+                    inference_result.frame_id if fresh_inference else None,
+                    selected_lane, decision, last_control_status)
+                observations.update(
+                    walker=walker_position(ego_transform, scenario.actors[0] if scenario.actors else None),
+                    camera_available=camera_ok, lane_centerline_m=control_path,
+                    radar_pose_world=radar_pose,
+                    radar_xy_m=[(t["distance_m"], t["lateral_m"]) for t in radar_targets],
+                    radar_closing_m_s=[t["closing_speed_ms"] for t in radar_safety_targets],
+                    person_track_hits=[(t.id, t.hits, t.time_since_update) for t in mot.tracks
+                                       if t.class_name.lower() == "person"],
+                    fresh_inference=bool(fresh_inference),
+                    lane_image_frame=candidate.frame_id if candidate else None,
+                    lane_confidence=candidate.confidence if candidate else None,
+                    lane_width_m=candidate.lane_width_m if candidate else None,
+                    lane_candidate_reason=candidate.reason if candidate else None,
+                    at_junction=lane_context.get("is_junction", False),
+                    ttc_by_source_s=safety.last_ttc_by_source)
+            if safety_capture:
+                safety_capture.record(safety, decision, l3, last_control_status, frame_id=w_frame,
+                                      observations=observations)
             if fresh_inference:
                 stage_metrics.record("perception", inference_result.latency_ms)
 
@@ -345,6 +437,9 @@ def run_one(client, world, bp_lib, spec, shared, args):
                 braked = True
             if "EVADE" in decision.state:
                 evaded = True
+            if spec.category == "sidewalk" and not scenario.sidewalk_metrics["passed_walker"]:
+                scenario.sidewalk_metrics["braked_on_approach"] |= decision.action == "BRAKE"
+                scenario.sidewalk_metrics["evaded_on_approach"] |= "EVADE" in decision.state
 
             threat = decision.threat or {}
             kpi.add(t=frame * dt, speed_ms=speed, distance_m=threat.get('distance_m'),
@@ -379,6 +474,12 @@ def run_one(client, world, bp_lib, spec, shared, args):
         acceptance_kpi = dict(summary)
         acceptance_kpi["min_distance_m"] = actor_clearance
         scenario_errors = list(scenario.errors)
+        if spec.category == "sidewalk":
+            metrics = scenario.sidewalk_metrics
+            moving = spec.name == "ParallelPedestrian"
+            if (not metrics["passed_walker"] or (metrics["min_lateral_m"] or 0.) <= cfg.LANE_HALF_WIDTH_M
+                    or (moving and metrics["travel_m"] < 1.) or (not moving and metrics["travel_m"] > .3)):
+                scenario_errors.append(f"sidewalk control exposure incomplete: {metrics}")
         if scenario.error_count > len(scenario.errors):
             scenario_errors.append(f"... {scenario.error_count - len(scenario.errors)} more")
         if scenario.measurement_errors:
@@ -389,7 +490,9 @@ def run_one(client, world, bp_lib, spec, shared, args):
             spec.name, spec.category, acceptance_kpi,
             triggered=scenario.hazard_frame is not None,
             reacted=timing["reacted_to_hazard"],
-            reaction_delay_s=reaction_delay_s, braked=braked, evaded=evaded,
+            reaction_delay_s=reaction_delay_s,
+            braked=(metrics["braked_on_approach"] if spec.category == "sidewalk" else braked),
+            evaded=(metrics["evaded_on_approach"] if spec.category == "sidewalk" else evaded),
             sensor_frame_errors=sync_stats.frame_errors,
             scenario_errors=scenario_errors)
         passed, reasons = verdict["pass"], verdict["reasons"]
@@ -414,6 +517,12 @@ def run_one(client, world, bp_lib, spec, shared, args):
             passed = False
             status = "FAIL"
             reasons = list(reasons) + weather_verdict["reasons"]
+
+        if focused:
+            verdict["criteria"]["post_hazard_aeb_command_required"] = True
+            if scenario.hazard_frame is not None and crossing.events["aeb_command_sent"] is None:
+                passed, status = False, "FAIL"
+                reasons = list(reasons) + ["No AEB brake command sent at or after the crossing command"]
 
         print(f"  [{spec.name}] collisions={collisions} reacted={reacted} "
               f"aeb={braked} braked={braked} evaded={evaded} minTTC={summary['min_ttc_s']} "
@@ -465,6 +574,14 @@ def run_one(client, world, bp_lib, spec, shared, args):
             "scenario_errors": scenario_errors,
             "pass": passed, "reasons": reasons,
         }
+        if spec.category == "sidewalk":
+            row["sidewalk_exposure"] = scenario.sidewalk_metrics
+        if trace_crossing and not focused:
+            row["events_after_actor_command"] = crossing.events
+        if focused:
+            row["pedestrian_response"] = {
+                "events_after_crossing_command": crossing.events, "lane_ticks": crossing.lane_ticks,
+                "lane_model_sha256": cfg.LEARNED_LANE_MODEL_SHA256}
         return row
 
     except Exception as e:
@@ -495,6 +612,17 @@ def run_one(client, world, bp_lib, spec, shared, args):
         _cleanup("restore traffic lights", lambda: restore_traffic_lights(light_snapshot))
         if inference_scheduler is not None:
             _cleanup("inference scheduler", inference_scheduler.close)
+        if lane_scheduler is not None:
+            _cleanup("lane scheduler", lane_scheduler.close)
+        if row is not None and "pedestrian_response" in row:
+            for key, scheduler in (("yolo_worker", inference_scheduler), ("lane_worker", lane_scheduler)):
+                stats = scheduler.stats()
+                row["pedestrian_response"][key] = stats
+                if stats["thread_alive"]:
+                    cleanup_errors.append(f"{key} still active after shutdown")
+                if stats["failed"]:
+                    row.update(status="ERROR", **{"pass": False})
+                    row["reasons"].append(f"{key} failed on {stats['failed']} inference request(s)")
         if scenario is not None:
             _cleanup("scenario actors", lambda: scenario.destroy(client))
         for s in (camera, lidar, radar):
@@ -516,12 +644,18 @@ def run_one(client, world, bp_lib, spec, shared, args):
             _cleanup("destroy owned actors", _destroy_owned)
         if row is not None:
             finalize_after_cleanup(row, cleanup_errors)
+        if safety_capture:
+            capture = finish_capture(safety_capture, warmup_steps + scenario_steps,
+                                     safety.steps == warmup_steps + scenario_steps)
+            if row is not None:
+                row["safety_replay"] = capture
 
 
 def main():
     parser = argparse.ArgumentParser(description="Ported ScenarioRunner test suite")
     parser.add_argument('--scenarios', type=str, default='core',
-                        help="'core' (bộ nghiệm thu lõi, mặc định) | 'all' | danh sách tên")
+                        help="'pedestrian' (learned lane and AEB trace) | 'pedestrian-controls' "
+                             "(standing and parallel walkers) | 'core' (default) | 'all' | scenario names")
     parser.add_argument('--category', type=str, default=None,
                         help="lọc theo nhóm: lead|crossing|cutin|junction|oncoming")
     parser.add_argument('--seconds', type=float, default=20.0)
@@ -541,14 +675,29 @@ def main():
     parser.add_argument('--fault-duration', type=float, default=4.0)
     parser.add_argument('--limit', type=int, default=0,
                         help="trần scenario; 0 = không giới hạn")
-    parser.add_argument('--report', type=str, default=REPORT_PATH,
+    parser.add_argument('--report', type=str, default=None,
                         help="đường dẫn JSON report; dùng tên riêng để không ghi đè matrix khác")
+    parser.add_argument('--safety-replay-out', type=str, default=None,
+                        help="ghi replay quyết định AEB, một thư mục mới cho mỗi ca")
     parser.add_argument('--clean', action='store_true',
                         help="dọn mọi xe/người/cảm biến còn sót trước khi chạy")
     parser.add_argument('--inference-device', type=str, default='auto',
                         choices=['auto', 'cpu', 'cuda'],
                         help="thiết bị suy luận; auto dùng CPU an toàn khi chạy CARLA trên Windows")
     args = parser.parse_args()
+    if args.report is None:
+        args.report = {"pedestrian": "logs/pedestrian_crossing_report.json",
+                       "pedestrian-controls": "logs/pedestrian_controls_report.json"}.get(
+                           args.scenarios, REPORT_PATH)
+    if args.safety_replay_out:
+        try:
+            os.makedirs(args.safety_replay_out, exist_ok=False)
+        except OSError as exc:
+            parser.error(f"--safety-replay-out: {exc}")
+    elif args.scenarios == "pedestrian":
+        report_dir = os.path.dirname(os.path.abspath(args.report))
+        os.makedirs(report_dir, exist_ok=True)
+        args.safety_replay_out = tempfile.mkdtemp(prefix="pedestrian-trace-", dir=report_dir)
 
     # Resolve the device before constructing the shared tracker.  In ``auto``
     # mode this selects CPU on Windows to avoid CUDA/D3D11 contention with CARLA.
@@ -562,6 +711,10 @@ def main():
 
     if args.scenarios == 'all':
         specs = list(lib.CATALOG)
+    elif args.scenarios == 'pedestrian-controls':
+        specs = lib.SIDEWALK_CONTROLS
+    elif args.scenarios == 'pedestrian':
+        specs = [s for s in lib.CATALOG if s.name == "DynamicObjectCrossing"]
     elif args.scenarios == 'core':
         order = {n: i for i, n in enumerate(CORE_SUITE)}
         specs = sorted([s for s in lib.CATALOG if s.name in order], key=lambda s: order[s.name])
@@ -643,8 +796,7 @@ def main():
     # Provenance, captured once before the matrix. Unknown fields stay None
     # with a reason; nothing is filled in from the current machine later.
     provenance = runtime_manifest(
-        model_paths=[cfg.YOLO_MODEL_A] + ([cfg.YOLO_MODEL_B] if cfg.USE_ENSEMBLE else []),
-        carla_version=carla_versions(client))
+        detector=shared[0], carla_version=carla_versions(client))
     provenance.update(git_state(os.path.dirname(os.path.abspath(__file__))))
     try:
         applied = world.get_settings()      # read back, not what was requested
@@ -694,6 +846,11 @@ def main():
             "cleanup": "verified per case",
         },
     }
+    if args.scenarios == 'pedestrian-controls':
+        criteria = meta["acceptance_criteria"]
+        criteria.pop("reacted")
+        criteria.pop("reaction_delay_s")
+        criteria["sidewalk"] = "ego passes walker outside corridor without braking or evasion"
     title = "CARLA ScenarioRunner Port — AEB/Avoidance Test Report (simulation)"
 
     results = []
@@ -707,7 +864,10 @@ def main():
                 for spec in specs:
                     print(f"[Scn] === {spec.name} ({spec.category}) | "
                           f"seed={run_seed} weather={run_weather} fault={args.fault} ===")
-                    results.append(run_one(client, world, bp_lib, spec, shared, args))
+                    replay_dir = (os.path.join(args.safety_replay_out, f"case-{len(results) + 1:03d}")
+                                  if args.safety_replay_out else None)
+                    results.append(run_one(client, world, bp_lib, spec, shared, args,
+                                           replay_dir=replay_dir, provenance=provenance))
                     # Checkpoint after every case (atomic replace): if the
                     # server dies, the finished cases survive and the rest
                     # show up as NOT_RUN.
@@ -738,6 +898,11 @@ def main():
         print(f"[Scn] REPORT NOT WRITTEN ({args.report}): {type(exc).__name__}: {exc}")
         return 4
     code = exit_code_for(report)
+    if args.safety_replay_out and any(
+        row.get("safety_replay", {}).get("status") != "COMPLETE" for row in results
+    ):
+        code = max(code, 2)
+        print("[Scn] Safety replay incomplete or unavailable. See the per-case report.")
     if matrix_error is not None or restore_errors:
         code = max(code, 2)
     suite = report["suite"]

@@ -34,11 +34,15 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 try:
-    from friction import stopping_distance
+    from safety_contracts import SafetyConfig, SafetyInput
+    from safety_fsm import SafetyFSM
     from road_geometry import project_to_safety_path, straight_path
+    from radar_crossing import RadarCrossingPredictor, crossing_conflict
 except ImportError:  # khi import kiểu package (modules.active_safety)
-    from modules.friction import stopping_distance
+    from modules.safety_contracts import SafetyConfig, SafetyInput
+    from modules.safety_fsm import SafetyFSM
     from modules.road_geometry import project_to_safety_path, straight_path
+    from modules.radar_crossing import RadarCrossingPredictor, crossing_conflict
 
 
 @dataclass
@@ -117,26 +121,10 @@ class ActiveSafetySystem:
         # (không phụ thuộc ước lượng closing dễ nhiễu ở tốc độ thấp).
         self.creep_speed_thresh = 3.0      # m/s
 
-        # Trạng thái nội bộ để chốt/latch quyết định.
-        self._brake_latched = False
-        self._evade_dir = None          # 'LANE_CHANGE_LEFT' | 'LANE_CHANGE_RIGHT'
-        self._evade_frames_left = 0
-        self._evade_origin_lane_id = None
-        # Giữ phanh đã chốt qua vài khung MẤT DẤU (vật thấp/thưa như cọc công
-        # trường cho cụm LiDAR chớp tắt) -> không nhả phanh rồi lao tới.
         self.lost_frames_tol = 4
-        self._lost_frames = 0
-        # Release is by TIME of observed clear path, not frame count: "4 frames"
-        # meant 0.1 s at 40 Hz and 0.67 s at 6 Hz. 0.1 s keeps the historical
-        # behaviour at the nominal 40 Hz (release on the 5th clear frame).
         self.clear_confirm_s = self.lost_frames_tol * 0.025
-        self._clear_observed_s = 0.0
-        # The brake level last emitted while latched. Missing data holds it;
-        # it cannot be weakened by frames that carry no evidence.
-        self._latched_level = 0.0
-        self.last_transition_reason = None
-
-        self.prev_nearest: float = math.inf  # cho ước lượng tốc độ tiến lại gần
+        self._fsm = SafetyFSM()
+        self.reset()
 
     def set_conditions(self, mu: float, gap_multiplier: float = 1.0) -> None:
         """ODD monitor gọi để cập nhật ma sát + hệ số giãn khoảng cách theo thời tiết."""
@@ -214,6 +202,18 @@ class ActiveSafetySystem:
                     ttc = min(ttc, along / closing)
                 continue
 
+            velocity_covariance = getattr(tr, "velocity_covariance", None)
+            if velocity_covariance is not None and str(getattr(tr, "class_name", "")).lower() == "person":
+                # Lane-entry time alone cannot establish a collision. Check
+                # occupancy at ego arrival before promoting an off-lane track.
+                # Legacy position/velocity-only providers retain their more
+                # conservative lane-entry response when uncertainty is unknown.
+                distance, arrival = crossing_conflict(
+                    x, y, vx + ego_speed_ms, _vy, path, ego_speed_ms, self.lane_half,
+                    self.vru_prediction_s, velocity_covariance)
+                nearest, ttc = min(nearest, distance), min(ttc, arrival)
+                continue
+
             # Track đang ở làn bên nhưng quỹ đạo ngắn hạn cắt vào swept path.
             step = 0.25
             t = step
@@ -289,7 +289,7 @@ class ActiveSafetySystem:
         return best_label if best_gap < 4.0 else "obstacle"
 
     # --------------------------------------------------------------------- #
-    def update(
+    def prepare_input(
         self,
         ego_speed_ms: float,
         fused_detections: List[Dict[str, Any]],
@@ -300,14 +300,9 @@ class ActiveSafetySystem:
         lane_context=None,
         radar_targets=None,
         lidar_valid: bool = True,
-    ) -> SafetyDecision:
-        """One safety decision.
-
-        ``lidar_valid`` says whether ``lidar_obstacles`` came from a fresh,
-        successfully processed LiDAR frame. An empty list with
-        ``lidar_valid=False`` is *no data*, not an empty road, and never
-        releases a latched brake.
-        """
+        radar_pose=None,
+    ) -> tuple[SafetyInput, dict]:
+        """Tính hình học một lần và chụp điều kiện đang có hiệu lực ở tick này."""
         corridor_nearest, _obs, gaps = self._scan_corridors(lidar_obstacles, path_points)
         left_clear = self._lane_change_clear(
             "left", gaps, tracks, path_points, lane_context, ego_speed_ms)
@@ -332,6 +327,9 @@ class ActiveSafetySystem:
 
         radar_nearest, radar_ttc, radar_closing = self._radar_threat(
             radar_targets, path_points)
+        cross_distance, cross_ttc = self._radar_crossing.threat(
+            radar_targets, dt, radar_pose, ego_speed_ms, path_points, self.lane_half,
+            self.critical_ttc)
 
         # Never average away danger: the most conservative valid geometry/TTC
         # from LiDAR, tracker, or radar wins.
@@ -339,6 +337,7 @@ class ActiveSafetySystem:
             "lidar": corridor_nearest,
             "tracker": pred_nearest,
             "radar": radar_nearest,
+            "radar_crossing": cross_distance,
         }
         finite_distances = {
             source: distance for source, distance in distance_candidates.items()
@@ -348,72 +347,27 @@ class ActiveSafetySystem:
                           if finite_distances else None)
         nearest = (finite_distances[nearest_source]
                    if nearest_source is not None else math.inf)
-        ttc = min(corridor_ttc, pred_ttc, radar_ttc)
+        ttc = min(corridor_ttc, pred_ttc, radar_ttc, cross_ttc)
+        self.last_ttc_by_source = {
+            name: value if math.isfinite(value) else None
+            for name, value in (("lidar", corridor_ttc), ("tracker", pred_ttc),
+                                ("radar", radar_ttc), ("radar_crossing", cross_ttc))
+        }
         conservative_closing = max(closing, radar_closing)
 
-        decision = SafetyDecision()
-
-        def _emit_brake(state, level):
-            decision.state = state
-            decision.action = "BRAKE"
-            decision.brake = level
-            decision.collision_risk = True
-            if self._brake_latched:
-                self._latched_level = level
-
-        if not math.isfinite(nearest):
-            # MẤT DẤU vật cản. Nếu ĐANG chốt phanh, giữ phanh cho tới khi đường
-            # trống được QUAN SÁT hợp lệ đủ lâu (clear_confirm_s).
-            #
-            # Two rules from the 2026-09-25 evidence review (open gap G9):
-            #  - a frame with no valid LiDAR data is not evidence that the
-            #    obstacle left, so it never counts toward release;
-            #  - holding does not weaken the brake. It used to drop from 1.0 to
-            #    0.7 on the first empty frame after a critical stop.
-            if self._brake_latched:
-                if not lidar_valid:
-                    self._clear_observed_s = 0.0
-                    self.last_transition_reason = "hold: no valid lidar observation"
-                    _emit_brake("BRAKE_HOLD_NO_DATA", self._latched_level or 1.0)
-                    return decision
-                if math.isfinite(dt) and dt > 0.0:
-                    self._clear_observed_s += dt
-                if self._clear_observed_s <= self.clear_confirm_s + 1e-9:
-                    self._lost_frames += 1
-                    self.last_transition_reason = "hold: confirming clear path"
-                    _emit_brake("BRAKE_HOLD", self._latched_level or 1.0)
-                    return decision
-                self.last_transition_reason = (
-                    f"release: clear path observed for {self._clear_observed_s:.3f} s")
-            self.prev_nearest = math.inf
-            self._brake_latched = False
-            self._latched_level = 0.0
-            self._clear_observed_s = 0.0
-            self._evade_dir = None
-            self._evade_frames_left = 0
-            self._evade_origin_lane_id = None
-            self._lost_frames = 0
-            return decision  # NORMAL / DRIVE
-        self._lost_frames = 0
-        self._clear_observed_s = 0.0
-
-        # Khoảng cách an toàn động = quãng đường dừng (theo μ) × hệ số thời tiết + đệm.
-        brake_dist = stopping_distance(ego_speed_ms, self.mu, self.reaction_time)
-        dyn_safe = self.gap_multiplier * brake_dist + self.min_safe_dist
-        critical = (nearest < self.min_safe_dist) or (ttc < self.critical_ttc)
-        warning = (nearest < dyn_safe) or (ttc < self.warning_ttc)
-
-        # Ước lượng TỐC ĐỘ VẬT CẢN (m/s): ego trừ tốc độ tiến lại gần. Vật đứng yên ->
-        # closing ≈ ego -> obstacle_speed ≈ 0. Không phụ thuộc ngưỡng tốc độ ego, nên
-        # xe vẫn xử lý dứt khoát vật tĩnh KỂ CẢ khi đang bò chậm (sửa lỗi "bò vào vật").
+        inputs = SafetyInput(
+            dt_s=dt, ego_speed_ms=ego_speed_ms,
+            nearest_distance_m=nearest if math.isfinite(nearest) else None,
+            ttc_s=ttc if math.isfinite(ttc) else None,
+            conservative_closing_ms=conservative_closing, lidar_valid=lidar_valid,
+            left_clear=left_clear, right_clear=right_clear,
+            current_lane_id=(lane_context or {}).get("current_lane_id"),
+            mu=self.mu, gap_multiplier=self.gap_multiplier,
+        )
+        if inputs.nearest_distance_m is None:
+            return inputs, {}
         obstacle_speed = max(0.0, ego_speed_ms - max(conservative_closing, 0.0))
-        lead_is_slow = obstacle_speed < self.follow_min_lead_speed
-        # Chốt an toàn độc lập với ước lượng closing (dễ nhiễu ở tốc độ thấp): ego bò
-        # chậm + vật còn trong vùng cảnh báo -> BẮT BUỘC hành động (dừng/né).
-        creeping = (ego_speed_ms < self.creep_speed_thresh) and (nearest < dyn_safe)
-        must_act = (nearest < self.evade_lookahead) and (lead_is_slow or creeping)
-
-        decision.threat = {
+        threat = {
             "distance_m": round(nearest, 2),
             "source": nearest_source,
             "ttc_s": round(ttc, 2) if math.isfinite(ttc) else None,
@@ -429,87 +383,63 @@ class ActiveSafetySystem:
             "label": self._label_for(nearest, fused_detections),
         }
 
-        # ================= PHÂN XỬ CÓ CAM KẾT + TRỄ (chống phân vân) =================
-        # Ngưỡng thoát (hysteresis): chỉ rời trạng thái phanh khi ĐÃ RÕ an toàn.
-        is_clear = (nearest > dyn_safe * self.brake_exit_factor) and \
-                   (ttc > self.warning_ttc * self.brake_exit_factor)
+        return inputs, threat
 
-        # 1) ĐANG PHANH -> giữ tới khi rõ an toàn (không nhả sớm gây phân vân).
-        if self._brake_latched:
-            if is_clear:
-                self._brake_latched = False
-                self._latched_level = 0.0
-                self.last_transition_reason = "release: threat beyond exit hysteresis"
-            else:
-                _emit_brake("EMERGENCY_BRAKE" if critical else "BRAKE_HOLD",
-                            1.0 if critical else 0.7)
-                return decision
+    def fsm_config(self) -> SafetyConfig:
+        """Cấu hình hiện hành của FSM, tách khỏi tham số xử lý hình học."""
+        return SafetyConfig(
+            reaction_time_s=self.reaction_time, min_safe_dist_m=self.min_safe_dist,
+            critical_ttc_s=self.critical_ttc, warning_ttc_s=self.warning_ttc,
+            enable_evasion=self.enable_evasion, evade_lookahead_m=self.evade_lookahead,
+            follow_speed_diff=self.follow_speed_diff, follow_min_lead_speed=self.follow_min_lead_speed,
+            creep_speed_thresh=self.creep_speed_thresh, evade_min_ttc=self.evade_min_ttc,
+            evade_commit_s=self.evade_commit_s, brake_exit_factor=self.brake_exit_factor,
+            clear_confirm_s=self.clear_confirm_s,
+        )
 
-        # 2) PHANH KHẨN CẤP luôn thắng và chốt lại.
-        if critical:
-            self._brake_latched = True
-            self._evade_dir = None
-            self._evade_frames_left = 0
-            self._evade_origin_lane_id = None
-            _emit_brake("EMERGENCY_BRAKE", 1.0)
-            return decision
+    def reset(self):
+        self._fsm.reset()
+        self._radar_crossing = RadarCrossingPredictor()
+        self.last_ttc_by_source = {}
+        self.prev_nearest = math.inf
+        self.steps = 0
+        self.last_input = None
+        self.last_config = None
 
-        # 3) Đang trong pha NÉ đã cam kết -> giữ hướng, trừ khi phải hủy để phanh.
-        if self._evade_frames_left > 0 and self._evade_dir is not None:
-            target_side = "right" if self._evade_dir == "LANE_CHANGE_RIGHT" else "left"
-            current_lane_id = (lane_context or {}).get("current_lane_id")
-            lane_change_complete = (
-                self._evade_origin_lane_id is not None
-                and current_lane_id is not None
-                and current_lane_id != self._evade_origin_lane_id)
-            target_still_clear = right_clear if target_side == "right" else left_clear
-            self._evade_frames_left -= 1
-            getting_dangerous = (ttc < self.critical_ttc * 1.3) or \
-                                (nearest < self.min_safe_dist * 1.3)
-            if lane_change_complete or not warning:
-                self._evade_dir = None
-                self._evade_frames_left = 0
-                self._evade_origin_lane_id = None
-            elif getting_dangerous or not target_still_clear:
-                # Chuyển làn không kịp/không ăn -> CHỐT PHANH ngay.
-                self._brake_latched = True
-                self._evade_dir = None
-                self._evade_frames_left = 0
-                self._evade_origin_lane_id = None
-                _emit_brake("EMERGENCY_BRAKE", 1.0)
-                return decision
-            else:
-                decision.state = "EVADE_RIGHT" if self._evade_dir == "LANE_CHANGE_RIGHT" else "EVADE_LEFT"
-                decision.action = self._evade_dir
-                decision.collision_risk = True
-                return decision
+    @property
+    def last_transition_reason(self):
+        return self._fsm.last_transition_reason
 
-        # 4) Vật CHẬM/ĐỨNG chắn đường trong tầm né -> DỨT KHOÁT: né (nếu đủ điều kiện)
-        #    hoặc PHANH DỪNG HẲN. KHÔNG bao giờ chỉ "SLOW" rồi trôi vào vật cản.
-        if must_act:
-            can_evade = (self.enable_evasion and (left_clear or right_clear)
-                         and ttc >= self.evade_min_ttc
-                         and nearest > self.min_safe_dist)
-            if can_evade:
-                self._evade_dir = "LANE_CHANGE_RIGHT" if right_clear else "LANE_CHANGE_LEFT"
-                self._evade_frames_left = max(1, int(self.evade_commit_s / max(dt, 1e-3)))
-                self._evade_origin_lane_id = (lane_context or {}).get("current_lane_id")
-                decision.state = "EVADE_RIGHT" if right_clear else "EVADE_LEFT"
-                decision.action = self._evade_dir
-                decision.collision_risk = True
-            else:
-                # Không né được (hai làn chặn / hết thời gian) -> phanh dừng & CHỐT lại.
-                self._brake_latched = True
-                _emit_brake("BRAKE_TO_STOP", 1.0)
-            return decision
+    def update(
+        self,
+        ego_speed_ms: float,
+        fused_detections: List[Dict[str, Any]],
+        lidar_obstacles: List[Dict[str, Any]],
+        dt: float,
+        tracks=None,
+        path_points=None,
+        lane_context=None,
+        radar_targets=None,
+        lidar_valid: bool = True,
+        radar_pose=None,
+    ) -> SafetyDecision:
+        """One safety decision.
 
-        # 5) Lead ĐANG CHẠY (đủ nhanh để bám), chỉ trong vùng cảnh báo -> giảm tốc bám.
-        if warning:
-            decision.state = "FOLLOW"
-            decision.action = "SLOW"
-            decision.slow_pct = self.follow_speed_diff
-            decision.collision_risk = True
-            return decision
-
-        # 6) NORMAL / DRIVE (mặc định)
-        return decision
+        ``lidar_valid`` says whether ``lidar_obstacles`` came from a fresh,
+        successfully processed LiDAR frame. An empty list with
+        ``lidar_valid=False`` is *no data*, not an empty road, and never
+        releases a latched brake.
+        """
+        inputs, threat = self.prepare_input(
+            ego_speed_ms, fused_detections, lidar_obstacles, dt, tracks=tracks,
+            path_points=path_points, lane_context=lane_context,
+            radar_targets=radar_targets, lidar_valid=lidar_valid, radar_pose=radar_pose)
+        config = self.fsm_config()
+        output = self._fsm.step(inputs, config)
+        if inputs.nearest_distance_m is None and output.action == "DRIVE":
+            self.prev_nearest = math.inf
+        self.steps += 1
+        self.last_input = inputs
+        self.last_config = config
+        return SafetyDecision(output.state, output.action, output.brake, output.slow_pct,
+                              output.collision_risk, threat)

@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🚗 CARLA ADAS — Perception → Fusion → Committed Active Safety
+# CARLA ADAS | Pedestrian Crossing and Lane-Aware Emergency Braking
 
-**A modular autonomous-driving perception and active-safety stack in the [CARLA](https://carla.org/) simulator, built around one production-ADAS principle: the emergency brake is a geometric check of the planned corridor against metric LiDAR and radar, not a detector output — so a missed or mislabelled detection cannot by itself suppress it. Perception labels the scene; geometry decides when to brake. (The corridor itself can come from the learned lane, so learned components are not out of the braking chain entirely.)**
+A Python simulation project investigating when an automatic emergency braking (AEB) system responds to a crossing pedestrian and how the detected lane shapes its braking corridor.
 
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![CARLA](https://img.shields.io/badge/CARLA-0.9.14%20%7C%200.9.15%20%7C%200.9.16-00A0E4)](https://carla.org/)
@@ -14,7 +14,36 @@
 
 </div>
 
-> **Portfolio project.** An end-to-end study of the perception → fusion → safety-decision loop at the core of every ADAS/AD stack, built solo in the CARLA simulator. It prioritizes correct fundamentals and honest verification over feature count. See [**Scope & status**](#scope--status) for exactly what is demonstrated versus in progress.
+## Pedestrian-crossing response
+
+**Town02 validation, 2026-11-23.** All 20 crossing trials (seeds 1–10, clear and storm) met the 1.0 s requirement. First safety response ranged from **0.600 to 0.700 s**. First AEB command sent ranged from **0.675 to 0.725 s**. There were zero collisions and the smallest surface-to-surface clearance was **3.02 m**. The car also passed both a stationary and a parallel-walking pedestrian in each weather without sending AEB in those four control runs. These trials use the map corridor. [Per-case results and replay checks](docs/benchmarks/pedestrian_deadline_20261123.json)
+
+The project requirement gives the safety system **1.0 s** to respond after the scenario commands a pedestrian to cross. The timer stops at the first safety decision at or after that command whose state differs from `NORMAL`. A `FOLLOW` decision also counts. The pedestrian trace separately records the first AEB request and the first AEB command sent to CARLA. [Scenario definition](modules/scenario_library.py) · [Timing implementation](run_scenarios.py)
+
+Across **10 seeds each in clear and storm conditions** on Town02, 8/10 clear runs and 7/10 storm runs met the requirement. In all five late runs, the crossing command came at frame 0 and the first response at frame 49. At 25 ms per simulation step, that is **1.225 s**, or **225 ms over budget**. The reports recorded zero collisions in these 20 runs. [Clear-weather results](docs/benchmarks/v2_doc_clear_10seed.json) · [Storm results](docs/benchmarks/v2_doc_storm_10seed.json)
+
+In a four-case reproduction on Town02, three runs again braked at frame 49. In all three, no confirmed person track was available at the deadline. Radar had already measured the off-lane pedestrian, but the direct radar check first admitted an in-lane return at frame 49. Its TTC was 0.99 s. LiDAR and the tracker supplied no TTC on that frame, and CARLA received the AEB command immediately. The fourth run had a confirmed person track and sent AEB at frame 11. [Threat evaluation](modules/active_safety.py)
+
+The radar crossing predictor fits motion to repeated, ego-motion-compensated radar positions. A target outside the lane contributes to AEB when its predicted path overlaps the lane at the vehicle's estimated arrival time within the existing critical TTC horizon. This path can operate while the camera worker has yet to return a usable person detection. [Radar crossing predictor](modules/radar_crossing.py)
+
+**Matched storm case, seed 1.** The first AEB command moved from frame 49 to frame 28, **1.225 s to 0.700 s**. Radar positions, ego speed and the map centerline matched between both runs on every frame from 0 through 28. At frame 28 the new branch estimated 1.58 s to conflict. The old system was still in `NORMAL`. An offline regression replays those 29 scans through both radar paths. [Recorded sensor inputs](tests/fixtures/safety/town02_storm_radar_prefix.json.gz) · [Regression test](tests/test_radar_crossing.py)
+
+In the matched clear-weather seed 9 run, the first AEB command moved later, from 0.275 to 0.700 s, still within budget. [Matched runs](docs/benchmarks/pedestrian_deadline_20261123.json)
+
+Two sidewalk controls exposed a separate tracking problem. An early person track could predict entry into the padded lane, or associate with a radar return outside the camera bearing. The tracker now checks radar bearing, and its off-lane pedestrian forecast requires inward motion supported by the estimated velocity uncertainty and overlap at ego arrival. The controls record whether the car braked or evaded before passing the walker. [Track association](modules/mot_tracker.py) · [Sidewalk scenarios](modules/scenario_library.py)
+
+```sh
+python run_scenarios.py --town Town02 --scenarios DynamicObjectCrossing --seeds 1,2,3,4,5,6,7,8,9,10 --weathers clear,storm --seconds 20 --inference-device cpu --report logs/deadline.json --safety-replay-out logs/deadline-traces
+python run_scenarios.py --town Town02 --scenarios pedestrian-controls --seed 1 --weathers clear,storm --seconds 20 --inference-device cpu --report logs/sidewalk.json
+```
+
+## Lane detection and the AEB corridor
+
+On a bend, a roadside object can sit straight ahead of the camera while the vehicle's path curves away. The runtime projects UFLDv2 lane estimates into vehicle coordinates and checks freshness, confidence, lane width and centerline stability. It uses the selected centerline to evaluate LiDAR obstacles and radar targets, with a CARLA map fallback for unreliable lane estimates and junctions. [Lane selection](modules/lane_source.py) · [Runtime integration](chinh.py)
+
+An offline test holds the curved centerline and ego speed (8 m/s) fixed. A LiDAR obstacle at **(16, 3) m** along the curve elicits a safety response. With a fresh safety state, an obstacle at **(18, 0) m** outside the curve leaves the state at `NORMAL`. The coordinates are longitudinal and lateral distances in the ego frame. [Curved-path test](selftest.py)
+
+The published five-second runtime used the map on **200/200 ticks**, with the learned backend ready. The named `DynamicObjectCrossing` benchmark uses the map corridor. Run `--scenarios pedestrian` to enable YOLO and the learned lane worker together and record the actual lane source, person tracks and brake commands. [Runtime source counts](docs/benchmarks/v2_runtime_smoke_async.json) · [Scenario harness](run_scenarios.py)
 
 <div align="center">
 
@@ -27,7 +56,8 @@
 ---
 
 ## Table of contents
-- [Highlights](#highlights)
+- [Pedestrian-crossing response](#pedestrian-crossing-response)
+- [Lane detection and the AEB corridor](#lane-detection-and-the-aeb-corridor)
 - [Scope & status](#scope--status)
 - [System architecture](#system-architecture) · [full architecture doc](docs/ARCHITECTURE.md)
 - [Active-safety state machine](#active-safety-state-machine)
@@ -45,17 +75,6 @@
 - [License](#license)
 
 ---
-
-## Highlights
-
-- **Geometry-first active safety** — the AEB decision is a metric LiDAR **swept path** aligned to the waypoint centerline, so the car brakes for in-path obstacles inside the LiDAR safety envelope (about 30 m ahead, ±10 m lateral, ground-height filtered) regardless of detector class (cones, debris, vehicles). Precisely: a detector miss or misclassification cannot *by itself* suppress a brake, because the trigger never reads detector output. It is not a guarantee that a brake is never missed — the geometric path still depends on valid LiDAR/radar returns, sensor synchronisation, visibility and the corridor geometry, and each of those can fail on its own.
-- **Committed safety arbiter** — a finite-state machine with hysteresis and brake-as-fallback that removed brake↔evade oscillation and brakes to a stop rather than creeping toward a stationary obstacle; a latched brake is released only after a clear corridor is *observed*, never because LiDAR data went missing. The diagram below shows the main path; the implementation also emits `BRAKE_HOLD` and `BRAKE_TO_STOP`, and the complete machine is in [`docs/ARCHITECTURE.md` §7.3](docs/ARCHITECTURE.md#73-the-committed-state-machine).
-- **Multi-sensor fusion** — YOLO semantics + LiDAR position + front-radar range/radial velocity, with 6-DoF extrinsics, one-to-one association and Mahalanobis track updates; ego-motion-compensated Kalman tracking.
-- **Audited learned lane with deterministic fallback** — UFLDv2 (Tusimple, ResNet18) via a hash-pinned, weights-only local backend, gated by confidence/width/jump checks with junction priority and a CARLA-map fallback.
-- **L3-style ODD / MRM layer** — an ODD monitor (`NORMAL / DEGRADED / VIOLATION`) and a `TOR → MRM → SAFE_STOP` state machine with a project-configured 10 s takeover window (driver takeover is a simulated flag, never a verified human), with a heuristic friction/stopping-distance model (a weather-weighted range-fusion helper exists and is unit-tested but is **not wired into the runtime**). "L3-style" means the *logic shape* of an SAE Level 3 fallback, simulated; it is not a Level 3 qualification, and friction/visibility are **modelled estimates** from CARLA weather parameters, not physical measurements.
-- **Safety-capped RL cruise** — a lightweight DQN sets desired speed from traffic density but can *only* propose cruise speed; AEB/MRM always override.
-- **Reproducible, CARLA-free verification** — `selftest.py` exercises the geometry + safety math in **210 checks** with no simulator running, so the safety logic is testable in CI.
-- **Fail-closed runtime** — the pipeline reports success only after teardown is *verified* (owned actors removed, world settings restored, async progress confirmed); a failed or timed-out cleanup fails the run and its exit code.
 
 ## Scope & status
 
@@ -171,7 +190,7 @@ and a soak attempt. Full reading:
 | Core subset of that run | **18/18** | 18/18 | ✅ | same file |
 | **Acceptance gate** (core + catalog + no collision) | **PASS** | PASS | ✅ | same file, `acceptance_gate.status` |
 | Core × 5 weathers, seed 42 | **29/30** | 30/30 | ❌ | [`v2_core_5weather.json`](docs/benchmarks/v2_core_5weather.json) — `DynamicObjectCrossing` in storm, 1.225 s |
-| `DynamicObjectCrossing` × 10 seeds, clear · storm | **8/10 · 7/10** | 10/10 | ❌ | [`v2_doc_clear_10seed.json`](docs/benchmarks/v2_doc_clear_10seed.json), [`v2_doc_storm_10seed.json`](docs/benchmarks/v2_doc_storm_10seed.json) — every late run 1.225 s, via radar |
+| `DynamicObjectCrossing` × 10 seeds, clear · storm | **8/10 · 7/10** | 10/10 | ❌ | [`v2_doc_clear_10seed.json`](docs/benchmarks/v2_doc_clear_10seed.json), [`v2_doc_storm_10seed.json`](docs/benchmarks/v2_doc_storm_10seed.json) — all five late runs reached their first response at frame 49 |
 | LiDAR + radar lost for 4 s (`HardBrake`) | **PASS** | PASS | ✅ | [`v2_range_loss.json`](docs/benchmarks/v2_range_loss.json) — brake held, then MRM → SAFE_STOP |
 | One sensor lost — LiDAR, radar, camera (`HardBrake`) | **3 + 3 PASS** | PASS | ✅ | [`v2_fault_*.json`](docs/benchmarks/README.md#single-sensor-loss-from-the-start-commit-adec9c4) — lost after the brake, and for the whole run: either range sensor alone detected the braking car; without radar the reaction came 0.15 s later and clearance fell from 5.78 m to 3.04 m |
 | Collisions / frame errors / invalid cases, 104 scenario runs | **0 / 0 / 0** | 0 | ✅ | all `v2_*` scenario files |
@@ -184,14 +203,9 @@ and a soak attempt. Full reading:
 three catalog seeds (0.5 / 0.7 / 0.5 s), but the same scenario took 1.225 s in the
 storm case of the weather matrix, and 0.30 / 1.225 / 1.10 s on 2026-09-19. With one
 run per case, a code effect cannot be separated from run-to-run variation in CPU
-inference timing, so the late reaction is **not** claimed fixed (G8). Ten-seed
-repeats then gave 8/10 in clear and 7/10 in storm: across all 29 runs on the v2
-code, the 23 on-time reactions (0.5–0.95 s) came from the camera tracker and the
-6 late ones were all exactly 1.225 s, from the radar. A late run is one where the camera
-tracker did not trigger the brake first and the geometric path caught the
-pedestrian at a fixed point; why the tracker did not is not yet diagnosed. The 104 scenario runs also
-overlap in recipes and seeds; "no collision recorded" describes these runs, not
-a guarantee.
+inference timing in those September results. Across all 29 crossing runs in the v2 reports, six exceeded the budget. The November matched-case investigation appears in [Pedestrian-crossing response](#pedestrian-crossing-response).
+At the first response, the nearest-distance source was radar in those six runs and tracker in the other 23.
+The 104 scenario runs overlap in recipes and seeds.
 
 **The 39.7 Hz is a smoke measurement:** 200 control updates over 5.03 s wall on
 an empty road, headless, `low-memory` profile, with interval p99 51.5 ms. It is the
@@ -319,7 +333,7 @@ Honesty about limits is part of the engineering.
 - **Native engine crash (B01) on heavy capture.** On the local custom CARLA build (`edf3e9f5c`, UE4 4.26.2), the fuller capture stack can trigger an intermittent native `EXCEPTION_ACCESS_VIOLATION` in skeletal-mesh scene-proxy render dispatch (`FSkeletalMeshSceneProxy` / `MeshObject`) during camera scene-capture. It has been reproduced across D3D11 and D3D12, `-onethread`, and low-render configurations; the available minidumps lack the heap needed to prove the object-lifetime root cause, and no matching native source/build tree is available to repair it. **Consequence:** demos and captures are scoped to a stable envelope (Low quality, 640×360, bounded runs). A full write-up is in [`docs/B01_FAILURE_ANALYSIS.md`](docs/B01_FAILURE_ANALYSIS.md). The 2026-09-27 soak (20 NPC vehicles) stopped after 51 s on a LiDAR read timeout, after which the server stopped answering cleanup calls — consistent with a server hang or crash; the report cannot tell which.
 - **An MRM brakes in a straight line, and an object inside the LiDAR near-field blind zone looks like a clear road.** Recorded as gaps G10 and G9 in [`docs/ARCHITECTURE.md` §12](docs/ARCHITECTURE.md#12-known-architectural-gaps). G9 is partly fixed (2026-09-25): missing LiDAR data no longer releases a latched brake, and holding no longer weakens it from 1.0 to 0.7 — seen live in the 2026-09-27 range-loss run (`BRAKE_HOLD_NO_DATA`, 9.4% of the run). The blind-zone case remains, and no curved-road MRM has been run.
 - **Takeover is simulated.** `--driver-takeover` is a flag; there is no manual input device and no verified human takeover. After the acknowledgement the configured controller keeps driving as a stand-in, and the AEB stays active.
-- **`DynamicObjectCrossing` misses the 1.0 s budget in about one run in five.** Across 29 runs on the v2 code it was late in 6 (2/10 clear and 3/10 storm in the ten-seed repeats, plus the storm case of the weather matrix, which fails it at 29/30). Every late run reacted at exactly **1.225 s** through the radar; every on-time run (0.50–0.95 s) through the camera tracker. The 1.225 s is when the geometric path sees the pedestrian inside the corridor; the budget is met only when the camera tracker triggers the brake first. Why it does not in those runs is **not diagnosed** — the scenario reports have no per-frame trace. No run collided; surface clearance to the pedestrian was 2.02–2.26 m in the late runs and 2.31–3.87 m in the others. Evidence: [`v2_doc_clear_10seed.json`](docs/benchmarks/v2_doc_clear_10seed.json), [`v2_doc_storm_10seed.json`](docs/benchmarks/v2_doc_storm_10seed.json), [`v2_core_5weather.json`](docs/benchmarks/v2_core_5weather.json); in the older [`head_doc_probe.json`](docs/benchmarks/head_doc_probe.json) every radar-decided reaction was also 1.225 s.
+- **Pedestrian-crossing coverage.** The deadline investigation uses one Town02 crossing geometry. Other approach speeds, crossings on curves, occlusions and cluttered sidewalks require separate validation. [Crossing analysis](#pedestrian-crossing-response)
 - **Detector accuracy is not qualified.** The demo uses pretrained COCO weights; a custom CARLA-domain 8-class detector is future work and does not yet meet an accuracy bar.
 - **Runtime latency targets are not met on CPU inference.** Perception p95 was 47–122 ms per case against 50 ms, and the 5 s runtime smoke still failed its safety-p99, perception-p95 and inference-age criteria even though the measured control rate was 39.7 Hz. In the 20-vehicle soak, 36% of safety-control samples exceeded 25 ms (p99 44.3 ms). No GPU-inference run has been published.
 - **Not a real-vehicle system.** This is a simulation study; it is not validated ADAS/L3 for a physical vehicle.
@@ -417,6 +431,9 @@ launch_carla.bat
 
 ## Testing
 
+For tick-by-tick AEB capture in CARLA and offline Python replay, see
+[Python safety replay](docs/PYTHON_SAFETY_REPLAY.md).
+
 No CARLA, no GPU, no weights required:
 
 ```bash
@@ -447,7 +464,7 @@ GitHub Actions runs four gates on every push: ruff, mypy, `selftest.py`, and the
 ## Engineering notes & design decisions
 
 - **Geometry over classification for braking.** The AEB trigger is a metric LiDAR swept path, not a detector confidence — a missed box cannot *by itself* cause a missed brake. Range sensing, synchronisation and corridor geometry remain in the path and can still fail.
-- **Path-aware safety.** Obstacles are projected onto the upcoming waypoint polyline, not a fixed rectangle, reducing curve misses and off-path false positives.
+- **Path-aware safety.** Obstacles are projected onto the selected centerline. An offline curved-path test checks both an in-path obstacle and an off-path obstacle.
 - **Radar ground-plane rejection.** Radar hits are transformed to the ego frame and rejected below a configurable height before clustering — removing the 9–10 m ray/road false AEB without discarding vehicle returns.
 - **Committed arbiter + hysteresis.** A committed decision with brake-as-fallback replaced frame-to-frame brake↔evade oscillation.
 - **Don't creep into a stationary obstacle.** A "blocker" is classified by *obstacle* speed, not ego speed. A latched brake is released only after a clear corridor has been observed on valid LiDAR frames for 0.1 s; frames without valid data hold it at its latched level.
@@ -459,6 +476,9 @@ GitHub Actions runs four gates on every push: ruff, mypy, `selftest.py`, and the
 - **No runtime model downloads.** A missing artifact produces an explicit provenance error and a geometry-safe fallback.
 
 ## Roadmap / future work
+
+- [x] Trace an early and a late crossing from walker command to first brake request, then repeat matched seeds after the change.
+- [ ] Compare learned and map corridors on matched curves with in-path and off-path obstacles. Record lane source, missed interventions and unnecessary brake requests.
 
 - [ ] Custom CARLA-domain 8-class detector with an accuracy bar and matched baseline comparison.
 - [ ] Full reviewed dataset (duplicate/leakage resolution, eight-class coverage) beyond the demonstrator sample.

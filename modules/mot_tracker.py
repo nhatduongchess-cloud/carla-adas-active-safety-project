@@ -111,6 +111,7 @@ class Track:
         self.kf = _KalmanCV(x, y, dt, meas_var=meas_var)
         self.class_name = class_name
         self.bbox = bbox
+        self.camera_position = (x, y)
         self.hits = 1
         self.age = 1
         self.time_since_update = 0
@@ -134,6 +135,10 @@ class Track:
         # Khi có ego compensation, Kalman velocity là vận tốc vật trong world
         # (biểu diễn theo trục ego), không phải closing speed.
         return (vx * vx + vy * vy) ** 0.5
+
+    @property
+    def velocity_covariance(self):
+        return self.kf.P[2:, 2:]
 
     def predict_path(self, horizon_s=2.0, step_s=0.5):
         """Danh sách (x, y) dự đoán theo mô hình vận tốc không đổi."""
@@ -168,9 +173,13 @@ class MultiObjectTracker:
         # 1) Bù chuyển động ego rồi dự đoán tất cả track.
         for tr in self.tracks:
             if motion_valid:
+                dx, dy = ego_motion.get("dx", 0.), ego_motion.get("dy", 0.)
+                yaw = ego_motion.get("dyaw", 0.)
+                cx, cy = tr.camera_position
+                c, s = math.cos(yaw), math.sin(yaw)
+                tr.camera_position = (c*(cx-dx) + s*(cy-dy), -s*(cx-dx) + c*(cy-dy))
                 tr.kf.compensate_ego_motion(
-                    ego_motion.get("dx", 0.0), ego_motion.get("dy", 0.0),
-                    ego_motion.get("dyaw", 0.0))
+                    dx, dy, yaw)
                 tr.ego_compensated = True
             tr.ego_speed_ms = float(ego_speed_ms)
             tr.kf.predict(dt)
@@ -213,6 +222,7 @@ class MultiObjectTracker:
                 mx, my, meas_var, d = meas[mi]
                 tr = self.tracks[ti]
                 tr.kf.update((mx, my), meas_var)
+                tr.camera_position = (mx, my)
                 tr.hits += 1
                 tr.time_since_update = 0
                 tr.bbox = d.get("bbox", tr.bbox)
@@ -255,6 +265,16 @@ class MultiObjectTracker:
             variance = max(0.05, float(radar.get("range_std_m", 0.35)) ** 2)
             for ti, track in enumerate(self.tracks):
                 tx, ty = track.pos
+                if track.class_name.lower() == "person":
+                    # A broad depth gate on monocular range can match a
+                    # roadside reflector that is visibly outside the person.
+                    # Check against the last camera ray before radar updates
+                    # the filter. Include body width, scatter and angular error.
+                    cx, cy = track.camera_position
+                    ray_length = math.hypot(cx, cy)
+                    if (ray_length <= 0. or cx*rx + cy*ry <= 0.
+                            or abs(cx*ry - cy*rx)/ray_length > .45 + .015*math.hypot(rx, ry)):
+                        continue
                 if math.hypot(tx - rx, ty - ry) > max(self.gate, 3.0 * variance ** 0.5):
                     continue
                 mahal = track.kf.innovation_distance((rx, ry), variance)

@@ -26,7 +26,7 @@ from modules.pipeline_metrics import PipelineMetrics
 def composition_class(dependencies):
     # Avoid importing/initializing any model, CARLA server or network dependency.
     tree = ast.parse(Path('modules/neural_perception.py').read_text(encoding='utf-8-sig'))
-    body = [n for n in tree.body if isinstance(n, ast.ClassDef)]
+    body = [n for n in tree.body if isinstance(n, (ast.ClassDef, ast.FunctionDef))]
     namespace = dict(Any=Any, Optional=Optional, Tuple=Tuple, time=time,
                      concurrent=concurrent, LatestFrameScheduler=LatestFrameScheduler,
                      usable_inference_payload=usable_inference_payload, LaneEstimate=LaneEstimate)

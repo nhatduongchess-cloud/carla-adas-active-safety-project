@@ -1,14 +1,17 @@
 import csv
 import math
+import os
 from datetime import datetime
 
 
 class TelemetryLogger:
     """Mô-đun đo lường và ghi nhận dữ liệu định lượng thời gian thực cho ADAS."""
 
-    def __init__(self, flush_every=15):
+    def __init__(self, flush_every=15, directory="logs/telemetry"):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.filename = f"telemetry_log_{timestamp}.csv"
+        # Ghi vào thư mục log riêng thay vì thư mục hiện hành (project root).
+        os.makedirs(directory, exist_ok=True)
+        self.filename = os.path.join(directory, f"telemetry_log_{timestamp}.csv")
         self.file = open(self.filename, mode='w', newline='', encoding='utf-8')
         self.writer = csv.writer(self.file)
         self.writer.writerow([

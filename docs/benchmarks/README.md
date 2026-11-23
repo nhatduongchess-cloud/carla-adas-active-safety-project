@@ -38,7 +38,7 @@ smoke run, and 0.7 / 0.85 / 0.75 / 0.6 / **1.225 s** across the five weathers. O
 **not** mean the late reaction is fixed: one run per case cannot separate a code
 effect from run-to-run variation in CPU inference timing, and the storm case still
 fails at exactly the old 1.225 s. Ten-seed repeats (next section) show when
-it is late and through which sensor; why is still open (G8).
+the nearest-distance source recorded at first response. The cause remains open (G8).
 
 **The new brake-release rule, first seen live.** In `v2_range_loss.json` the ego
 spent 9.4% of the run in `BRAKE_HOLD_NO_DATA` — the latched brake held while the
@@ -97,26 +97,14 @@ verified in each.
 ### `DynamicObjectCrossing`: the late reactions have one signature
 
 Across all 29 runs of this scenario on the v2 code (3 catalog, 5 weather, 1
-smoke, 20 repeats), the reaction splits cleanly by the source that won the
-brake decision (`source_at_reaction`):
+smoke, 20 repeats), the following groups use the nearest-distance source at first response (`source_at_reaction`).
 
-| Reacting source | Runs | Reaction delay | Result | Surface clearance |
+| Nearest-distance source | Runs | Reaction delay | Result | Surface clearance |
 |---|---:|---|---|---|
 | camera tracker | 23 | 0.50–0.95 s | all PASS | 2.31–3.87 m |
 | radar | 6 | **1.225 s in every run** (frame 49, 8.23 m, TTC 0.99 s) | all FAIL | 2.02–2.26 m |
 
-So the constant 1.225 s is not a random slow reaction: it is the moment the
-geometric (radar/LiDAR) path detects the pedestrian inside the driving corridor,
-and it is the same in every run because the scenario geometry is. The 1.0 s budget
-is met only when the camera tracker triggers the brake earlier; in 6 of 29 runs
-it did not. Late runs occurred 2/10 in clear and 3/10 in storm — with ten runs
-each that is not evidence of a weather effect — and not on a fixed set of seeds
-(only seed 1 was late in both). **Why the tracker missed in those runs is not
-diagnosed**: the scenario reports carry no per-frame trace. Even the late runs
-stopped with 2.0–2.3 m surface clearance and no contact; that is a measurement of
-these runs, not a safety claim. In every earlier published run, a radar-decided reaction was
-also exactly 1.225 s (`head_*` files); on that older code the tracker was
-sometimes late too (1.10 s twice in `head_doc_probe.json`).
+Five of the six late runs came from the ten-seed repeats (two clear, three storm). Seed 1 was late in both weathers. The sixth came from the weather matrix. The reports identify the nearest-distance source at the first non-NORMAL decision. Establishing which input triggered braking requires the TTC source, decision branch and brake-command frame.
 
 ### Single-sensor loss: what these three runs do and do not show
 

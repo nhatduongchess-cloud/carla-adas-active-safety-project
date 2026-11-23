@@ -65,9 +65,12 @@ def assess_scenario(
         invalid.append(f"collision count is not a valid count: {raw_collisions!r}")
     elif collisions != 0:
         failures.append(f"{collisions} va chạm")
-    if triggered and not reacted:
+    sidewalk = category == "sidewalk"
+    if sidewalk and (braked or evaded):
+        failures.append("braking or evasion during a non-crossing pedestrian control")
+    if triggered and not sidewalk and not reacted:
         failures.append("FSM không phản ứng sau khi scenario kích hoạt")
-    if triggered and reacted:
+    if triggered and not sidewalk and reacted:
         if reaction_delay_s is None:
             invalid.append("không đo được thời gian phản ứng")
         elif not _finite(reaction_delay_s):
@@ -107,7 +110,7 @@ def assess_scenario(
         "criteria": {
             "scenario_triggered": True,
             "collisions": 0,
-            "max_reaction_s": max_reaction_s,
+            **({"no_brake_or_evade": True} if sidewalk else {"max_reaction_s": max_reaction_s}),
             "min_clearance_m": min_clearance_m,
             "sensor_frame_errors": 0,
             "cutin_requires_brake_or_evade": category == "cutin",

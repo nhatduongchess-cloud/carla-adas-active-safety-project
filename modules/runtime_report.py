@@ -46,6 +46,7 @@ class RuntimeReportData:
     control_timing: Optional[Dict[str, Any]] = None
     sim_clock: Optional[Dict[str, Any]] = None
     l3_summary: Optional[Dict[str, Any]] = None
+    safety_replay: Optional[Dict[str, Any]] = None
 
 
 def write_runtime_report(path: str, cfg: Any,
@@ -149,6 +150,7 @@ def write_runtime_report(path: str, cfg: Any,
             "configured_fps": cfg.FPS,
             "control_timing": data.control_timing,
             "sim_clock": data.sim_clock,
+            **({"safety_replay": data.safety_replay} if data.safety_replay is not None else {}),
             "headless": bool(data.no_display),
             "performance_profile": data.effective_performance,
         },

@@ -222,16 +222,14 @@ case. One run per case: run-to-run variation is not measured, which matters for
 
 | Check | Report | Result |
 |---|---|---|
-| `DynamicObjectCrossing` × 10 seeds, clear | `v2_doc_clear_10seed.json` | 8/10 — late runs 1.225 s, via radar |
-| `DynamicObjectCrossing` × 10 seeds, storm | `v2_doc_storm_10seed.json` | 7/10 — late runs 1.225 s, via radar |
+| `DynamicObjectCrossing` × 10 seeds, clear | `v2_doc_clear_10seed.json` | 8/10 — late runs 1.225 s, nearest-distance source radar |
+| `DynamicObjectCrossing` × 10 seeds, storm | `v2_doc_storm_10seed.json` | 7/10 — late runs 1.225 s, nearest-distance source radar |
 | One sensor lost (LiDAR / radar / camera), `HardBrake` | `v2_fault_*_loss.json` | 3 PASS; hold kept, ODD NORMAL, no MRM; fault starts after the hazard |
 | One sensor lost for the whole run, `HardBrake` (`adec9c4`) | `v2_fault_*_loss_from_start.json` | 3 PASS; LiDAR-only reacted 0.15 s later with 3.04 m clearance (5.78 m with radar); ODD NORMAL throughout |
 | LiDAR read timeout in `chinh.py` (R9c) | `v2_soak_5min_20veh.json` | observed live: loss recorded, safe-stop command sent |
 | Soak, 300 s, 20 NPC vehicles | `v2_soak_5min_20veh.json` | `FAIL` — stopped at 51 s; cleanup not verified (server unresponsive); 38.5 Hz until then |
 
-The repeats narrow the `DynamicObjectCrossing` question (§7.3): all 6 late runs
-of 29 were decided by the radar at the same geometric point, all 23 on-time runs
-by the camera tracker. The per-frame diagnosis trace is still not done.
+Across the 29 v2 crossing runs, radar supplied the nearest distance at the first non-NORMAL decision in all six late runs. The corresponding label was tracker in the 23 on-time runs. The cause of the timing difference remains open.
 
 ## Measured FPS / latency
 
