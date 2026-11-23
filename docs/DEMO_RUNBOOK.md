@@ -1,21 +1,19 @@
 # Demo runbook — recording the portfolio demo
 
-Purpose: a one-shot, reproducible recipe for the portfolio demo video and the honest results table. All commands are verified against the current CLI (`modules/runtime_config.py`, `run_scenarios.py`). Runs in the **stable envelope** (see `docs/B01_FAILURE_ANALYSIS.md`): Low quality, 640×360, `low-memory` profile, `async-stable`, bounded duration.
+Record a bounded dashboard run on Windows with Low quality, a 640×360 simulator window, the `low-memory` profile and `async-stable` mode. Use the [crossing benchmark](../README.md#run-the-live-carla-benchmark) for pedestrian deadline measurements. [Engine stability analysis](B01_FAILURE_ANALYSIS.md)
 
-> Run everything from the project root with the project interpreter:
-> `C:\Users\Admin\OneDrive\Desktop\Carla Simulator\Self-Driving-Perception`, `\.venvCarLa\Scripts\python.exe`.
+> Run the commands from the repository root in PowerShell. The launcher uses `.\.venvCarLa\Scripts\python.exe` for its server readiness probe. Install a CARLA client matching your server in that environment.
 > On Windows `async-stable`, `--inference-device auto` resolves to **CPU** by design (avoids the CUDA/D3D11 contention that triggers B01). Keep `auto` for the demo; `cuda` is opt-in only after a driver stress test.
 > Before recording, confirm flags with `--help` — do not add flags not listed here.
 
 ## 0. Pre-flight (once per session)
 
 ```powershell
-Set-Location 'C:\Users\Admin\OneDrive\Desktop\Carla Simulator\Self-Driving-Perception'
-
 # Sanity: safety/geometry logic green, no simulator needed
-.\.venvCarLa\Scripts\python.exe selftest.py            # expect 190 PASS / 0 FAIL
+.\.venvCarLa\Scripts\python.exe selftest.py
 
-# Start the CARLA server (Low / 640x360 visible window)
+# Set this to your installation if CarlaUE4.exe is outside the repository's parent directory.
+# $env:CARLA_ROOT = 'D:\CARLA'
 .\launch_carla.bat
 
 # Read-only readiness check against the running server

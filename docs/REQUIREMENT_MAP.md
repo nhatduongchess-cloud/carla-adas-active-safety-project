@@ -1,13 +1,20 @@
 # Requirement → evidence map
 
-Traces each README capability to the code that implements it, the tests that
-exercise it, and any simulator run that observed it. Rewritten 2026-09-25 for the
-evidence remediation ([`docs/EVIDENCE_REMEDIATION_RESULTS.md`](EVIDENCE_REMEDIATION_RESULTS.md)):
-the previous version marked almost every row "✅ demonstrated", which did not
-separate "the code exists" from "a test exercised it" from "a simulator run
-showed it". The scope reference now points at the README
-[Scope & status](../README.md#scope--status) section; the
-`docs/PORTFOLIO_SCOPE_PLAN.md` it used to link does not exist in this repository.
+## Pedestrian AEB follow-up, 2026-11-23
+
+The simulation runs used Town02 and 0.025 s steps. Each row links the behavior under test to its acceptance rule and the evidence that supports it. [Per-case report](benchmarks/pedestrian_deadline_20261123.json) · [Metric definitions](METRIC_DEFINITIONS.md#safety-metrics)
+
+| Behavior | Conditions and acceptance | Implementation | Offline verification | Evidence and limits |
+|---|---|---|---|---|
+| Respond to a crossing pedestrian within the project deadline | From the command that starts the crossing, the first safety decision outside `NORMAL` must occur within **1.0 s** of simulation time. Record the first positive AEB command sent as a separate timestamp. | [`RunningScenario.tick` and `_dynamic_object`](../modules/scenario_library.py) · [`reaction_timing` and `assess_scenario`](../modules/scenario_acceptance.py) · [`PedestrianResponse.observe`](../modules/pedestrian_response.py) | [`test_crossing_clock_and_command_ownership`](../tests/test_pedestrian_response.py) · [`test_recorded_storm_radar_precedes_direct_corridor`](../tests/test_radar_crossing.py) | **Unit-verified** for timing, command source and the radar decision. **Simulation-observed** in 20/20 crossing cases using seeds 1–10 in clear and storm weather. Decisions occurred at 0.600–0.700 s and sent commands at 0.675–0.725 s. Zero collisions were recorded and the minimum episode clearance was 3.02 m. All cases used the map corridor. [`after.rows`](benchmarks/pedestrian_deadline_20261123.json) |
+| Pass a pedestrian outside the path without an unintended intervention | With a standing or parallel-walking pedestrian on the roadside, the ego must pass the pedestrian and the exposure checks must hold. A `BRAKE` action or an evasion state on approach fails the control. | [`_sidewalk_control`](../modules/scenario_library.py) · [`run_one`](../run_scenarios.py) · [`assess_scenario`](../modules/scenario_acceptance.py) | [`test_sidewalk_control_requires_valid_exposure_and_no_brake`](../tests/test_radar_crossing.py) | **Unit-verified** for the acceptance rules. **Simulation-observed** in four valid seed 1 controls in clear and storm weather. There were 0/4 cases with a brake decision, evasion state or AEB command sent, zero collisions and a minimum episode clearance of 1.87 m. This is a count for two roadside behaviors under the tested conditions. [`non_crossing.rows`](benchmarks/pedestrian_deadline_20261123.json) |
+| Use the selected centerline to determine whether an obstacle is in the braking corridor | At 8 m/s, hold a synthetic LiDAR obstacle 4.0 m ahead and 2.6 m right. The accepted curved centerline yields `BRAKE`. An expired lane estimate or a junction selects the straight map corridor and yields `DRIVE`. | [`LaneSourceArbiter.select`](../modules/lane_source.py) · [`ActiveSafetySystem._scan_corridors`](../modules/active_safety.py) | [`test_selected_corridor_changes_obstacle_membership`](../tests/test_pedestrian_response.py) | **Unit-verified** with a synthetic lane estimate. **Simulation-observed** for map fallback in the separate focused run, with map selected on 800/800 control ticks. The effect of selecting a learned centerline in a live curve remains unmeasured. [`focused_lane_run`](benchmarks/pedestrian_deadline_20261123.json) |
+
+The seed 1 storm fixture spans frames 0–28. The regression reproduces a `BRAKE` decision at frame 28 from the radar crossing predictor while the direct radar path remains in `NORMAL` throughout that prefix. The before-and-after episode summaries place the first sent brake commands at frame 49 (1.225 s) and frame 28 (0.700 s), 0.525 s apart. Radar supplied the TTC at both responses, with 0.99 s from the direct corridor check before the change and 1.58 s from the predictor after it. In clear weather at seed 9, the first sent brake command moved from 0.275 to 0.700 s and both runs met the decision deadline. The baseline reproduction covered four cases. [Recorded input prefix](../tests/fixtures/safety/town02_storm_radar_prefix.json.gz) · [Episode summaries](benchmarks/pedestrian_deadline_20261123.json)
+
+## September 2026 system baseline
+
+The matrix below preserves the wider system requirements and their verification status at the time of the September evidence review. R11 includes the crossing failures that motivated the November follow-up. [Evidence review](EVIDENCE_REMEDIATION_RESULTS.md) · [Project scope](../README.md#scope--status)
 
 **Status vocabulary** (a row can hold more than one):
 
@@ -23,7 +30,7 @@ showed it". The scope reference now points at the README
 *live* (CARLA server), *inspection* (reading code/docs). Test counts on
 2026-09-27: `selftest.py` 210 checks; `unittest discover -s tests` 410 tests on the
 development machine (Windows, `.venvCarLa`); 307 of those in the CI offline group.
-Live evidence on the current code comes from the **2026-09-27 v2 run** (commit
+Live evidence for the September baseline comes from the **2026-09-27 v2 run** (commit
 `46bbaa4`, one run per matrix, CPU inference; files `docs/benchmarks/v2_*.json`).
 
 | # | Requirement (verifiable form) | Code | Tests (type) | Simulation evidence | Status | Not covered |

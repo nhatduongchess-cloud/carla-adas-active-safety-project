@@ -7,7 +7,8 @@ acceptance metric.
 
 **Clocks.** Three clocks exist and are never mixed:
 
-- **sim** — CARLA simulation time, from sensor `timestamp` fields (seconds).
+- **sim** — CARLA simulation time in seconds, derived from sensor timestamps or
+  from frame differences and the fixed simulation step in synchronous scenarios.
 - **wall** — `time.perf_counter()` in the client process (seconds), for rates
   and durations of the Python loop.
 - **mono** — `time.monotonic()`, for ages of asynchronous results.
@@ -51,14 +52,29 @@ re-rendered with new definitions.
 - **Preemptive response:** a reaction that began before the hazard and was still
   active on the hazard frame scores 0.0 s with `preemptive_response: true`. A
   reaction that began and ended before the hazard is **not** a response.
-- **Validity:** finite and ≥ 0; otherwise the case is INVALID.
-- **What it is not:** it is decision latency. It is not the time the command was
-  applied, nor when the vehicle measurably decelerated. It does not tie the
-  reaction to the hazard actor: an unrelated `FOLLOW` state that is active counts.
+- **Validity and acceptance:** a recorded delay must be finite and ≥ 0.
+  For `DynamicObjectCrossing`, the walker command sets the origin and the
+  scenario gate requires `reaction_delay_s ≤ 1.0 s`. A `FOLLOW` decision
+  can satisfy the timing criterion, including one caused by another target.
+  [Scenario trigger](../modules/scenario_library.py) · [Acceptance logic](../modules/scenario_acceptance.py)
 - **v1 (all reports up to 2026-09-19):** measured from the first non-NORMAL state
   after *trigger* and clamped with `max(0, …)`, so a pre-hazard reaction that had
   ended was scored as an instant response. Reports before 2026-09-19 also had no
   hazard origin at all (`hazard_frame: null`, delay always 0.0).
+
+### First AEB command sent — `first_sent_aeb_frame` and `first_sent_aeb_delay_s`
+
+- **Source:** controller status for the first frame at or after `hazard_frame`
+  with `command_sent: true`, a positive brake value and AEB as the brake source.
+  Trace capture records the command status. The focused runner also records the
+  event in `PedestrianResponse.observe`. [Controller](../modules/ego_control.py) · [Trace capture](../modules/safety_replay.py) · [Event recorder](../modules/pedestrian_response.py)
+- **Value:** `(first_sent_aeb_frame − hazard_frame) × Δt_sim`. The timestamp
+  measures command dispatch. Simulator acknowledgement and physical deceleration
+  onset require separate measurements. A missing qualifying command is recorded as
+  `null`. The one-second deadline applies to `reaction_delay_s`.
+- **Observed:** the 20 November crossing runs recorded first decisions
+  at 0.600–0.700 s and first sent AEB commands at 0.675–0.725 s.
+  [November crossing report](benchmarks/pedestrian_deadline_20261123.json)
 
 ### Clearance — `scenario_min_clearance_m` + `clearance_basis`
 - **Source:** `modules/clearance.py`, via `RunningScenario._min_clearance`.
@@ -69,8 +85,9 @@ re-rendered with new definitions.
   fallbacks otherwise. The weakest basis seen in a run is recorded.
 - **Validity:** actor states that could not be read are counted
   (`measurement_errors`) and make the case INVALID.
-- **Limits:** 2D footprint in the road plane — not exact 3D clearance; no elevation
-  gating (bridges, slopes).
+- **Limits:** the metric takes the smallest observed road-plane gap across the
+  episode. A measurement at standstill would need a defined stopping frame.
+  The footprint calculation does not gate by elevation on bridges or slopes.
 - **Historical:** every published report before 2026-09-25 recorded the
   **centre-to-centre** distance in this field, now reported as
   `scenario_min_center_distance_m`. For a vehicle target that value cannot fall
@@ -101,9 +118,21 @@ re-rendered with new definitions.
   flag.
 
 ### False AEB
-- **Not measured.** No independent clear-path oracle and no negative-exposure
-  duration exist yet; "frames commanding BRAKE / total frames" is **not** a false
-  AEB rate and is not reported as one.
+
+- **Exposure:** one valid sidewalk encounter is one case. The runner checks that
+  the ego passes the walker, that the measured lateral separation on approach
+  exceeds the configured corridor half-width and that the walker moves as intended
+  for the selected control. The approach flags cover control ticks before
+  `sidewalk_exposure.pass_frame`. [Sidewalk scenarios](../modules/scenario_library.py) · [Exposure checks](../run_scenarios.py)
+- **Acceptance and counting:** count cases with `braked_on_approach` or
+  `evaded_on_approach` among valid encounters. Either flag fails the control.
+  The trace also records whether the controller sent a positive AEB command.
+  [Acceptance logic](../modules/scenario_acceptance.py) · [Command capture](../modules/safety_replay.py)
+- **Observed:** at seed 1, the standing and parallel-walking controls in clear and
+  storm weather yielded 0/4 cases with either approach flag and 0/4 cases with a
+  sent AEB command. The denominator is four simulated sidewalk encounters. A
+  general false-AEB rate would need a broader set of validated exposures.
+  [November sidewalk results](benchmarks/pedestrian_deadline_20261123.json)
 
 ---
 
@@ -160,6 +189,9 @@ toward the MRM.
 ### Stage latencies — `safety_p99_ms`, `perception_p95_ms`, `inference_age_p95_ms`
 - **Source:** `modules/pipeline_metrics.py`; boundaries are stated in the report's
   `measurement_semantics` block.
+- **Clock and units:** these are client-side elapsed times or result ages in
+  milliseconds. Each uses the samples collected for that stage. The crossing
+  deadline uses simulated seconds from the scenario command to the decision.
 - **Not end-to-end:** stage percentiles are not summed into an end-to-end latency.
   `sensor_to_control_wall_ms` (callback receipt → command RPC return, same trace
   ID) is **not implemented yet**; callback-receipt timestamps are not propagated

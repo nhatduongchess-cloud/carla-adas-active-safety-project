@@ -1,9 +1,10 @@
 # Benchmark artifacts
 
-The JSON reports behind the numbers in the [main README](../../README.md#results).
-They were previously only in `logs/`, which is git-ignored, so the figures could
-not be checked by anyone reading the repository. They are published here
-unmodified — same bytes the harness wrote.
+## Pedestrian crossing validation, 2026-11-23
+
+The [crossing report](pedestrian_deadline_20261123.json) contains four baseline reproductions (`before`), the 20-case clear/storm matrix (`after`), four sidewalk controls (`non_crossing`) and one focused lane run (`focused_lane_run`). Each matrix row records the first safety response and first sent AEB command separately. Raw report paths under `logs/` identify locally generated files; the tracked summary includes checksums.
+
+To examine the matched seed 1 storm result, use the [29-frame radar input](../../tests/fixtures/safety/town02_storm_radar_prefix.json.gz) and the [offline replay command](../../README.md#replay-the-storm-case-offline). The dated sections below preserve earlier runs and their original acceptance criteria.
 
 ## Core-suite rerun, 2026-11-09
 
@@ -21,7 +22,9 @@ used AEB. No case activated a lane change, so this run provides evidence for
 braking under this configuration. The earlier multi-seed and weather reports
 below cover a broader test matrix.
 
-## Evidence v2 run, 2026-09-27 — the current results
+<a id="evidence-v2-run-2026-09-27--the-current-results"></a>
+
+## Evidence v2 run, 2026-09-27
 
 The first live run of the 2026-09-25 remediation code, commit
 [`46bbaa4`](https://github.com/nhatduongchess-cloud/carla-adas-active-safety-project/commit/46bbaa48991ae607453444f30337fa247338c87c)

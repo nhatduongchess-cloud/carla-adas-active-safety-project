@@ -10,9 +10,10 @@ REM    launch_carla.bat default-rhi       -> RHI mac dinh cua CARLA (DX12 trong 
 REM    launch_carla.bat default-rhi off   -> RHI mac dinh + RenderOffScreen
 REM    launch_carla.bat dx11              -> DX11 Low quality, co cua so 3D
 REM    launch_carla.bat dx11 off          -> DX11 RenderOffScreen
-REM  Neu cai CARLA cho khac, sua CARLA_ROOT ben duoi.
+REM  Set CARLA_ROOT to the directory containing CarlaUE4.exe.
+REM  A checkout inside the CARLA installation uses its parent by default.
 REM ============================================================
-set "CARLA_ROOT=C:\Users\Admin\OneDrive\Desktop\Carla Simulator"
+if not defined CARLA_ROOT set "CARLA_ROOT=%~dp0.."
 set "PROJECT_ROOT=%~dp0"
 set "PROJECT_PYTHON=%PROJECT_ROOT%.venvCarLa\Scripts\python.exe"
 set "PORT=2000"
@@ -51,8 +52,7 @@ if defined ARG_ERROR (
 
 if not exist "%CARLA_ROOT%\CarlaUE4.exe" (
   echo [LOI] Khong tim thay "%CARLA_ROOT%\CarlaUE4.exe"
-  echo       Hay sua bien CARLA_ROOT trong file nay.
-  pause
+  echo       Set CARLA_ROOT to the directory containing CarlaUE4.exe.
   exit /b 1
 )
 
@@ -60,6 +60,11 @@ powershell -NoProfile -Command "if (Get-Process -Name 'CarlaUE4-Win64-Shipping' 
 if not errorlevel 1 (
   echo [LOI] CARLA dang chay hoac dang treo. Hay dong tien trinh cu truoc khi launch lai.
   exit /b 2
+)
+
+if not exist "%PROJECT_PYTHON%" (
+  echo [LOI] Khong tim thay "%PROJECT_PYTHON%" de probe CARLA API.
+  exit /b 3
 )
 
 if /I "%RENDER_MODE%"=="offscreen" (
@@ -71,11 +76,6 @@ if /I "%RENDER_MODE%"=="offscreen" (
 )
 
 echo.
-if not exist "%PROJECT_PYTHON%" (
-  echo [LOI] Khong tim thay "%PROJECT_PYTHON%" de probe CARLA API.
-  exit /b 3
-)
-
 echo [CARLA] Dang cho world API va frame async san sang, timeout 120s...
 "%PROJECT_PYTHON%" "%PROJECT_ROOT%scripts\tools\wait_for_carla.py" --host 127.0.0.1 --port %PORT% --timeout 120
 if errorlevel 1 (
